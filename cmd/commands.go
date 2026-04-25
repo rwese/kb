@@ -13,6 +13,8 @@ func (c *Commands) Run(ctx context.Context, args []string) error {
 		Name:  "kb",
 		Usage: "Knowledgebase CLI with weighted retrieval",
 		Commands: []*cli.Command{
+			c.setup(),
+			c.check(),
 			c.init(),
 			c.add(),
 			c.append(),
