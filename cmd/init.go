@@ -1,0 +1,37 @@
+package cmd
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/rwese/kb/internal/config"
+	"github.com/rwese/kb/internal/db"
+	"github.com/urfave/cli/v3"
+)
+
+func (c *Commands) init() *cli.Command {
+	return &cli.Command{
+		Name:  "init",
+		Usage: "Initialize knowledgebase database",
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			cfg, err := config.Discover()
+			if err != nil {
+				return err
+			}
+
+			database, err := db.Open(cfg.DBPath)
+			if err != nil {
+				return err
+			}
+			defer database.Close()
+
+			if err := database.Init(); err != nil {
+				return err
+			}
+
+			count, _ := database.Count()
+			fmt.Printf("Initialized: %s\nEntries: %d\n", cfg.DBPath, count)
+			return nil
+		},
+	}
+}
