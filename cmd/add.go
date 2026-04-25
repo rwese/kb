@@ -16,10 +16,10 @@ import (
 func (c *Commands) add() *cli.Command {
 	return &cli.Command{
 		Name:  "add",
-		Usage: "Add entry to knowledgebase",
+		Usage: "Add entry with initial article to knowledgebase",
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "title", Aliases: []string{"t"}, Usage: "Entry title"},
-			&cli.StringFlag{Name: "content", Aliases: []string{"c"}, Usage: "Entry content"},
+			&cli.StringFlag{Name: "content", Aliases: []string{"c"}, Usage: "Article content"},
 			&cli.StringFlag{Name: "file", Aliases: []string{"f"}, Usage: "Read content from file"},
 			&cli.StringFlag{Name: "tags", Usage: "Comma-separated tags"},
 			&cli.BoolFlag{Name: "stdin", Aliases: []string{"s"}, Usage: "Read content from stdin"},
@@ -36,12 +36,20 @@ func (c *Commands) add() *cli.Command {
 			}
 			defer database.Close()
 
-			var title, content string
+			var title, content, tags string
 
 			// Get title
-			if t := cmd.String("title"); t != "" {
-				title = t
+			title = cmd.String("title")
+			if title == "" {
+				fmt.Print("Entry title: ")
+				title = readLine()
+				if title == "" {
+					return fmt.Errorf("title required")
+				}
 			}
+
+			// Get tags
+			tags = cmd.String("tags")
 
 			// Get content
 			if f := cmd.String("file"); f != "" {
@@ -50,36 +58,36 @@ func (c *Commands) add() *cli.Command {
 					return err
 				}
 				content = string(data)
-				if title == "" {
-					title = f
-				}
 			} else if cmd.Bool("stdin") {
 				data, err := io.ReadAll(os.Stdin)
 				if err != nil {
 					return err
 				}
 				content = string(data)
-				if title == "" {
-					title = "stdin"
-				}
 			} else if c := cmd.String("content"); c != "" {
 				content = c
 			} else {
-				// Interactive mode
-				fmt.Print("Title: ")
-				title = readLine()
-				fmt.Print("Content (Ctrl+D to finish):\n")
+				fmt.Print("Article content (Ctrl+D to finish):\n")
 				content = readMultiline()
 			}
 
-			tags := cmd.String("tags")
-
-			id, err := database.Add(title, content, tags)
+			// Create entry
+			entryID, err := database.AddEntry(title, tags)
 			if err != nil {
 				return err
 			}
 
-			fmt.Printf("Added entry #%d\n", id)
+			// Add initial article
+			if content != "" {
+				articleID, err := database.AddArticle(entryID, "", content)
+				if err != nil {
+					return err
+				}
+				fmt.Printf("Added entry #%d with article #%d\n", entryID, articleID)
+			} else {
+				fmt.Printf("Added entry #%d\n", entryID)
+			}
+
 			return nil
 		},
 	}

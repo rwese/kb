@@ -2,25 +2,42 @@ package db
 
 import (
 	"database/sql"
-	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 
 	_ "github.com/mattn/go-sqlite3"
 )
 
+// ErrNotFound is returned when an entry or article is not found
+var ErrNotFound = errors.New("not found")
+
 type Entry struct {
-	ID        int64     `json:"id"`
-	Title     string    `json:"title"`
-	Content   string    `json:"content"`
-	Tags      string    `json:"tags,omitempty"`
-	CreatedAt string    `json:"created_at"`
-	UpdatedAt string    `json:"updated_at"`
+	ID        int64  `json:"id"`
+	Title     string `json:"title"`
+	Tags      string `json:"tags,omitempty"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+type Article struct {
+	ID        int64  `json:"id"`
+	EntryID   int64  `json:"entry_id"`
+	Title     string `json:"title"`
+	Content   string `json:"content"`
+	CreatedAt string `json:"created_at"`
+}
+
+type EntryWithArticles struct {
+	Entry
+	Articles []Article `json:"articles"`
 }
 
 type SearchResult struct {
-	Entry
-	Score float64 `json:"score"`
+	Article
+	EntryID    int64   `json:"entry_id"`
+	EntryTitle string  `json:"entry_title"`
+	Score      float64 `json:"score"`
 }
 
 type DB struct {
@@ -45,37 +62,44 @@ func (d *DB) Init() error {
 		`CREATE TABLE IF NOT EXISTS entries (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			title TEXT NOT NULL,
-			content TEXT NOT NULL,
 			tags TEXT,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			metadata TEXT
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)`,
-		`CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(
-			title, content, tags,
-			content='entries',
+		`CREATE TABLE IF NOT EXISTS articles (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			entry_id INTEGER NOT NULL,
+			title TEXT,
+			content TEXT NOT NULL,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (entry_id) REFERENCES entries(id) ON DELETE CASCADE
+		)`,
+		`CREATE VIRTUAL TABLE IF NOT EXISTS articles_fts USING fts5(
+			title, content,
+			content='articles',
 			content_rowid='id',
 			tokenize='porter unicode61'
 		)`,
-		`CREATE TRIGGER IF NOT EXISTS entries_ai AFTER INSERT ON entries BEGIN
-			INSERT INTO entries_fts(rowid, title, content, tags)
-			VALUES (new.id, new.title, new.content, new.tags);
+		`CREATE TRIGGER IF NOT EXISTS articles_ai AFTER INSERT ON articles BEGIN
+			INSERT INTO articles_fts(rowid, title, content)
+			VALUES (new.id, new.title, new.content);
 		END`,
-		`CREATE TRIGGER IF NOT EXISTS entries_ad AFTER DELETE ON entries BEGIN
-			INSERT INTO entries_fts(entries_fts, rowid, title, content, tags)
-			VALUES ('delete', old.id, old.title, old.content, old.tags);
+		`CREATE TRIGGER IF NOT EXISTS articles_ad AFTER DELETE ON articles BEGIN
+			INSERT INTO articles_fts(articles_fts, rowid, title, content)
+			VALUES ('delete', old.id, old.title, old.content);
 		END`,
-		`CREATE TRIGGER IF NOT EXISTS entries_au AFTER UPDATE ON entries BEGIN
-			INSERT INTO entries_fts(entries_fts, rowid, title, content, tags)
-			VALUES ('delete', old.id, old.title, old.content, old.tags);
-			INSERT INTO entries_fts(rowid, title, content, tags)
-			VALUES (new.id, new.title, new.content, new.tags);
+		`CREATE TRIGGER IF NOT EXISTS articles_au AFTER UPDATE ON articles BEGIN
+			INSERT INTO articles_fts(articles_fts, rowid, title, content)
+			VALUES ('delete', old.id, old.title, old.content);
+			INSERT INTO articles_fts(rowid, title, content)
+			VALUES (new.id, new.title, new.content);
 		END`,
 		`CREATE TABLE IF NOT EXISTS embeddings (
-			entry_id INTEGER PRIMARY KEY,
+			article_id INTEGER PRIMARY KEY,
 			embedding BLOB,
-			FOREIGN KEY (entry_id) REFERENCES entries(id) ON DELETE CASCADE
+			FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE
 		)`,
+		`CREATE INDEX IF NOT EXISTS idx_articles_entry ON articles(entry_id)`,
 	}
 
 	for _, q := range queries {
@@ -87,10 +111,12 @@ func (d *DB) Init() error {
 	return nil
 }
 
-func (d *DB) Add(title, content, tags string) (int64, error) {
+// Entry operations
+
+func (d *DB) AddEntry(title, tags string) (int64, error) {
 	result, err := d.conn.Exec(
-		"INSERT INTO entries (title, content, tags) VALUES (?, ?, ?)",
-		title, content, tags,
+		"INSERT INTO entries (title, tags) VALUES (?, ?)",
+		title, tags,
 	)
 	if err != nil {
 		return 0, err
@@ -98,35 +124,144 @@ func (d *DB) Add(title, content, tags string) (int64, error) {
 	return result.LastInsertId()
 }
 
-func (d *DB) AddBatch(entries []Entry) error {
-	tx, err := d.conn.Begin()
+func (d *DB) GetEntry(id int64) (*Entry, error) {
+	var e Entry
+	err := d.conn.QueryRow(
+		"SELECT id, title, tags, created_at, updated_at FROM entries WHERE id = ?",
+		id,
+	).Scan(&e.ID, &e.Title, &e.Tags, &e.CreatedAt, &e.UpdatedAt)
 	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	stmt, err := tx.Prepare("INSERT INTO entries (title, content, tags) VALUES (?, ?, ?)")
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
-
-	for _, e := range entries {
-		if _, err := stmt.Exec(e.Title, e.Content, e.Tags); err != nil {
-			return err
+		if err == sql.ErrNoRows {
+			return nil, ErrNotFound
 		}
+		return nil, err
+	}
+	return &e, nil
+}
+
+func (d *DB) GetEntryByTitle(title string) (*Entry, error) {
+	var e Entry
+	err := d.conn.QueryRow(
+		"SELECT id, title, tags, created_at, updated_at FROM entries WHERE title = ?",
+		title,
+	).Scan(&e.ID, &e.Title, &e.Tags, &e.CreatedAt, &e.UpdatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &e, nil
+}
+
+func (d *DB) ListEntries() ([]Entry, error) {
+	rows, err := d.conn.Query(
+		"SELECT id, title, tags, created_at, updated_at FROM entries ORDER BY updated_at DESC",
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []Entry
+	for rows.Next() {
+		var e Entry
+		if err := rows.Scan(&e.ID, &e.Title, &e.Tags, &e.CreatedAt, &e.UpdatedAt); err != nil {
+			return nil, err
+		}
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
+}
+
+func (d *DB) UpdateEntryTime(id int64) error {
+	_, err := d.conn.Exec("UPDATE entries SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", id)
+	return err
+}
+
+// Article operations
+
+func (d *DB) AddArticle(entryID int64, title, content string) (int64, error) {
+	result, err := d.conn.Exec(
+		"INSERT INTO articles (entry_id, title, content) VALUES (?, ?, ?)",
+		entryID, title, content,
+	)
+	if err != nil {
+		return 0, err
 	}
 
-	return tx.Commit()
+	// Update entry timestamp
+	d.UpdateEntryTime(entryID)
+
+	return result.LastInsertId()
 }
+
+func (d *DB) GetArticles(entryID int64) ([]Article, error) {
+	rows, err := d.conn.Query(
+		"SELECT id, entry_id, title, content, created_at FROM articles WHERE entry_id = ? ORDER BY created_at",
+		entryID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var articles []Article
+	for rows.Next() {
+		var a Article
+		if err := rows.Scan(&a.ID, &a.EntryID, &a.Title, &a.Content, &a.CreatedAt); err != nil {
+			return nil, err
+		}
+		articles = append(articles, a)
+	}
+	return articles, rows.Err()
+}
+
+func (d *DB) GetArticle(id int64) (*Article, error) {
+	var a Article
+	err := d.conn.QueryRow(
+		"SELECT id, entry_id, title, content, created_at FROM articles WHERE id = ?",
+		id,
+	).Scan(&a.ID, &a.EntryID, &a.Title, &a.Content, &a.CreatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &a, nil
+}
+
+func (d *DB) DeleteArticle(id int64) error {
+	// Get entry_id before delete
+	var entryID int64
+	d.conn.QueryRow("SELECT entry_id FROM articles WHERE id = ?", id).Scan(&entryID)
+
+	_, err := d.conn.Exec("DELETE FROM articles WHERE id = ?", id)
+	if err != nil {
+		return err
+	}
+
+	// Update entry timestamp
+	return d.UpdateEntryTime(entryID)
+}
+
+func (d *DB) DeleteEntry(id int64) error {
+	_, err := d.conn.Exec("DELETE FROM entries WHERE id = ?", id)
+	return err
+}
+
+// Search operations
 
 func (d *DB) Search(query string, topK int) ([]SearchResult, error) {
 	rows, err := d.conn.Query(`
-		SELECT e.id, e.title, e.content, e.tags, e.created_at, e.updated_at,
-			   bm25(entries_fts) as score
-		FROM entries_fts
-		JOIN entries e ON entries_fts.rowid = e.id
-		WHERE entries_fts MATCH ?
+		SELECT a.id, a.entry_id, a.title, a.content, a.created_at,
+			   e.title as entry_title,
+			   bm25(articles_fts) as score
+		FROM articles_fts
+		JOIN articles a ON articles_fts.rowid = a.id
+		JOIN entries e ON a.entry_id = e.id
+		WHERE articles_fts MATCH ?
 		ORDER BY score
 		LIMIT ?
 	`, query, topK)
@@ -135,21 +270,19 @@ func (d *DB) Search(query string, topK int) ([]SearchResult, error) {
 	}
 	defer rows.Close()
 
-	return scanResults(rows)
-}
-
-func (d *DB) SearchJSON(query string, topK int) ([]SearchResult, error) {
-	results, err := d.Search(query, topK)
-	if err != nil {
-		return nil, err
+	var results []SearchResult
+	for rows.Next() {
+		var r SearchResult
+		var title sql.NullString
+		if err := rows.Scan(&r.ID, &r.EntryID, &title, &r.Content, &r.CreatedAt, &r.EntryTitle, &r.Score); err != nil {
+			return nil, err
+		}
+		if title.Valid {
+			r.Title = title.String
+		}
+		results = append(results, r)
 	}
-
-	// Output as JSON lines for piping
-	for _, r := range results {
-		data, _ := json.Marshal(r)
-		println(string(data))
-	}
-	return results, nil
+	return results, rows.Err()
 }
 
 func (d *DB) Count() (int, error) {
@@ -158,24 +291,12 @@ func (d *DB) Count() (int, error) {
 	return count, err
 }
 
-func (d *DB) Close() error {
-	return d.conn.Close()
+func (d *DB) ArticleCount() (int, error) {
+	var count int
+	err := d.conn.QueryRow("SELECT COUNT(*) FROM articles").Scan(&count)
+	return count, err
 }
 
-func scanResults(rows *sql.Rows) ([]SearchResult, error) {
-	var results []SearchResult
-	for rows.Next() {
-		var r SearchResult
-		var tags sql.NullString
-		var metadata sql.NullString
-		if err := rows.Scan(&r.ID, &r.Title, &r.Content, &tags, &r.CreatedAt, &r.UpdatedAt, &r.Score); err != nil {
-			return nil, err
-		}
-		if tags.Valid {
-			r.Tags = tags.String
-		}
-		_ = metadata
-		results = append(results, r)
-	}
-	return results, rows.Err()
+func (d *DB) Close() error {
+	return d.conn.Close()
 }

@@ -15,7 +15,11 @@ func (c *Commands) Run(ctx context.Context, args []string) error {
 		Commands: []*cli.Command{
 			c.init(),
 			c.add(),
+			c.append(),
+			c.list(),
+			c.get(),
 			c.search(),
+			c.delete(),
 			c.config(),
 		},
 	}

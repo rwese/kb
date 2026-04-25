@@ -14,7 +14,7 @@ import (
 func (c *Commands) search() *cli.Command {
 	return &cli.Command{
 		Name:  "search",
-		Usage: "Search knowledgebase with weighted retrieval",
+		Usage: "Search knowledgebase articles with weighted retrieval",
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "context", Aliases: []string{"C"}, Usage: "Context text (weighted lower than prompt)"},
 			&cli.StringFlag{Name: "context-file", Aliases: []string{"F"}, Usage: "Read context from file"},
@@ -67,12 +67,12 @@ func (c *Commands) search() *cli.Command {
 
 			// Format output
 			format := cmd.String("format")
-			return formatResults(results, format)
+			return formatSearchResults(results, format)
 		},
 	}
 }
 
-func formatResults(results []db.SearchResult, format string) error {
+func formatSearchResults(results []db.SearchResult, format string) error {
 	switch format {
 	case "json":
 		enc := json.NewEncoder(os.Stdout)
@@ -80,14 +80,14 @@ func formatResults(results []db.SearchResult, format string) error {
 		return enc.Encode(results)
 	case "simple":
 		for _, r := range results {
-			fmt.Printf("[%.2f] %s\n%s\n\n", r.Score, r.Title, r.Content)
+			fmt.Printf("[%.2f] %s (entry #%d)\n%s\n\n", r.Score, r.EntryTitle, r.EntryID, r.Content)
 		}
 	default: // text
-		for _, r := range results {
-			fmt.Printf("--- [%s] ---\n", formatScore(r.Score))
-			fmt.Printf("Title: %s\n", r.Title)
-			if r.Tags != "" {
-				fmt.Printf("Tags: %s\n", r.Tags)
+		for i, r := range results {
+			fmt.Printf("--- Result #%d [score: %s] ---\n", i+1, formatScore(r.Score))
+			fmt.Printf("Entry: %s (#%d)\n", r.EntryTitle, r.EntryID)
+			if r.Title != "" {
+				fmt.Printf("Article title: %s\n", r.Title)
 			}
 			fmt.Printf("\n%s\n\n", r.Content)
 		}
@@ -97,4 +97,10 @@ func formatResults(results []db.SearchResult, format string) error {
 
 func formatScore(s float64) string {
 	return fmt.Sprintf("%.2f", s)
+}
+
+func formatJSON(v interface{}) error {
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(v)
 }
