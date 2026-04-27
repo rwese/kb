@@ -1,0 +1,3 @@
+display_name: Knowledgebase
+short_description: Manage and query a personal knowledgebase with weighted retrieval
+default_prompt: Search the knowledgebase for information about "{query}" and summarize relevant findings.
