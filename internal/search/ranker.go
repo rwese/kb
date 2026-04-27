@@ -71,7 +71,7 @@ func mustEmbed(text string) []float32 {
 // HybridSearch combines BM25 and semantic search
 func HybridSearch(bm25Results, semanticResults []db.SearchResult, topK int) []db.SearchResult {
 	// Reciprocal Rank Fusion
-	scores := make(map[int64]float64)
+	scores := make(map[string]float64)
 
 	for i, r := range bm25Results {
 		scores[r.ID] += 1.0 / float64(61+i) // rank starts at 1

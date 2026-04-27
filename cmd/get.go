@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/rwese/kb/internal/config"
 	"github.com/rwese/kb/internal/db"
@@ -11,12 +12,13 @@ import (
 
 func (c *Commands) get() *cli.Command {
 	return &cli.Command{
-		Name:  "get",
-		Usage: "Get entry with articles",
+		Name:      "get",
+		Usage:     "Get entry or article",
+		ArgsUsage: "<id>",
 		Flags: []cli.Flag{
-			&cli.Int64Flag{Name: "entry", Aliases: []string{"e"}, Usage: "Entry ID"},
-			&cli.Int64Flag{Name: "article", Aliases: []string{"a"}, Usage: "Specific article ID"},
 			&cli.BoolFlag{Name: "json", Usage: "Output as JSON"},
+			&cli.BoolFlag{Name: "all", Usage: "Include deleted entries"},
+			&cli.BoolFlag{Name: "articles", Aliases: []string{"a"}, Usage: "Include articles (for entries)"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			cfg, err := config.Discover()
@@ -30,32 +32,39 @@ func (c *Commands) get() *cli.Command {
 			}
 			defer database.Close()
 
-			// Get specific article
-			if articleID := cmd.Int64("article"); articleID > 0 {
-				article, err := database.GetArticle(articleID)
+			id := cmd.Args().First()
+			if id == "" {
+				return fmt.Errorf("ID required")
+			}
+
+			includeDeleted := cmd.Bool("all")
+			asJSON := cmd.Bool("json")
+
+			// Detect if this is an article ID (contains '-')
+			if strings.Contains(id, "-") {
+				article, err := database.GetArticleWithDeleted(id, includeDeleted)
 				if err != nil {
 					return fmt.Errorf("article not found: %w", err)
 				}
-				return printArticle(article, cmd.Bool("json"))
+				return printArticle(article, asJSON)
 			}
 
-			// Get entry
-			entryID := cmd.Int64("entry")
-			if entryID == 0 {
-				return fmt.Errorf("--entry required")
-			}
-
-			entry, err := database.GetEntry(entryID)
+			// Entry ID
+			entry, err := database.GetEntryWithDeleted(id, includeDeleted)
 			if err != nil {
 				return fmt.Errorf("entry not found: %w", err)
 			}
 
-			articles, err := database.GetArticles(entryID)
-			if err != nil {
-				return err
+			// Show articles only with --articles flag
+			if cmd.Bool("articles") {
+				articles, err := database.GetArticlesWithDeleted(id, includeDeleted)
+				if err != nil {
+					return err
+				}
+				return printEntryWithArticles(entry, articles, asJSON)
 			}
 
-			return printEntryWithArticles(entry, articles, cmd.Bool("json"))
+			return printEntry(entry, asJSON)
 		},
 	}
 }
@@ -69,19 +78,37 @@ func printEntryWithArticles(entry *db.Entry, articles []db.Article, asJSON bool)
 		return formatJSON(EntryJSON{Entry: *entry, Articles: articles})
 	}
 
-	fmt.Printf("=== Entry #%d: %s ===\n", entry.ID, entry.Title)
+	// Markdown document format
+	fmt.Printf("# %s\n\n", entry.Title)
 	if entry.Tags != "" {
-		fmt.Printf("Tags: %s\n", entry.Tags)
+		fmt.Printf("Tags: %s\n\n", entry.Tags)
 	}
-	fmt.Printf("Created: %s | Updated: %s\n\n", entry.CreatedAt, entry.UpdatedAt)
+	fmt.Printf("*Entry %s | Created: %s | Updated: %s*\n\n", entry.ID, entry.CreatedAt, entry.UpdatedAt)
 
 	for i, a := range articles {
-		fmt.Printf("--- Article #%d ---\n", i+1)
 		if a.Title != "" {
-			fmt.Printf("Title: %s\n", a.Title)
+			fmt.Printf("## %s\n\n", a.Title)
+		} else {
+			fmt.Printf("## Article %d\n\n", i+1)
 		}
-		fmt.Printf("Added: %s\n\n%s\n\n", a.CreatedAt, a.Content)
+		fmt.Printf("*Added: %s*\n\n", a.CreatedAt)
+		fmt.Printf("---\n\n%s\n\n", a.Content)
 	}
+
+	return nil
+}
+
+func printEntry(entry *db.Entry, asJSON bool) error {
+	if asJSON {
+		return formatJSON(entry)
+	}
+
+	// Markdown document format - entry only
+	fmt.Printf("# %s\n\n", entry.Title)
+	if entry.Tags != "" {
+		fmt.Printf("Tags: %s\n\n", entry.Tags)
+	}
+	fmt.Printf("*Entry %s | Created: %s | Updated: %s*\n", entry.ID, entry.CreatedAt, entry.UpdatedAt)
 
 	return nil
 }
@@ -91,11 +118,13 @@ func printArticle(article *db.Article, asJSON bool) error {
 		return formatJSON(article)
 	}
 
-	fmt.Printf("=== Article #%d ===\n", article.ID)
-	fmt.Printf("Entry: %d\n", article.EntryID)
+	// Markdown document format
+	fmt.Printf("# Article %s\n\n", article.ID)
 	if article.Title != "" {
-		fmt.Printf("Title: %s\n", article.Title)
+		fmt.Printf("**%s**\n\n", article.Title)
 	}
-	fmt.Printf("Added: %s\n\n%s\n", article.CreatedAt, article.Content)
+	fmt.Printf("*Entry %s | Added: %s*\n\n", article.EntryID, article.CreatedAt)
+	fmt.Printf("---\n\n%s\n", article.Content)
+
 	return nil
 }

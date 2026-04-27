@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -13,7 +14,7 @@ import (
 var ErrNotFound = errors.New("not found")
 
 type Entry struct {
-	ID        int64  `json:"id"`
+	ID        string `json:"id"`
 	Title     string `json:"title"`
 	Tags      string `json:"tags,omitempty"`
 	CreatedAt string `json:"created_at"`
@@ -21,8 +22,8 @@ type Entry struct {
 }
 
 type Article struct {
-	ID        int64  `json:"id"`
-	EntryID   int64  `json:"entry_id"`
+	ID        string `json:"id"`
+	EntryID   string `json:"entry_id"`
 	Title     string `json:"title"`
 	Content   string `json:"content"`
 	CreatedAt string `json:"created_at"`
@@ -35,7 +36,7 @@ type EntryWithArticles struct {
 
 type SearchResult struct {
 	Article
-	EntryID    int64   `json:"entry_id"`
+	EntryID    string  `json:"entry_id"`
 	EntryTitle string  `json:"entry_title"`
 	Score      float64 `json:"score"`
 }
@@ -60,15 +61,15 @@ func Open(dbPath string) (*DB, error) {
 func (d *DB) Init() error {
 	queries := []string{
 		`CREATE TABLE IF NOT EXISTS entries (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			id TEXT PRIMARY KEY,
 			title TEXT NOT NULL,
 			tags TEXT,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE IF NOT EXISTS articles (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			entry_id INTEGER NOT NULL,
+			id TEXT PRIMARY KEY,
+			entry_id TEXT NOT NULL,
 			title TEXT,
 			content TEXT NOT NULL,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -82,20 +83,20 @@ func (d *DB) Init() error {
 		)`,
 		`CREATE TRIGGER IF NOT EXISTS articles_ai AFTER INSERT ON articles BEGIN
 			INSERT INTO articles_fts(rowid, title, content)
-			VALUES (new.id, new.title, new.content);
+			VALUES (new.rowid, new.title, new.content);
 		END`,
 		`CREATE TRIGGER IF NOT EXISTS articles_ad AFTER DELETE ON articles BEGIN
 			INSERT INTO articles_fts(articles_fts, rowid, title, content)
-			VALUES ('delete', old.id, old.title, old.content);
+			VALUES ('delete', old.rowid, old.title, old.content);
 		END`,
 		`CREATE TRIGGER IF NOT EXISTS articles_au AFTER UPDATE ON articles BEGIN
 			INSERT INTO articles_fts(articles_fts, rowid, title, content)
-			VALUES ('delete', old.id, old.title, old.content);
+			VALUES ('delete', old.rowid, old.title, old.content);
 			INSERT INTO articles_fts(rowid, title, content)
-			VALUES (new.id, new.title, new.content);
+			VALUES (new.rowid, new.title, new.content);
 		END`,
 		`CREATE TABLE IF NOT EXISTS embeddings (
-			article_id INTEGER PRIMARY KEY,
+			article_id TEXT PRIMARY KEY,
 			embedding BLOB,
 			FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE
 		)`,
@@ -113,23 +114,30 @@ func (d *DB) Init() error {
 
 // Entry operations
 
-func (d *DB) AddEntry(title, tags string) (int64, error) {
-	result, err := d.conn.Exec(
-		"INSERT INTO entries (title, tags) VALUES (?, ?)",
-		title, tags,
+func (d *DB) AddEntry(id, title, tags string) error {
+	_, err := d.conn.Exec(
+		"INSERT INTO entries (id, title, tags) VALUES (?, ?, ?)",
+		id, title, tags,
 	)
-	if err != nil {
-		return 0, err
-	}
-	return result.LastInsertId()
+	return err
 }
 
-func (d *DB) GetEntry(id int64) (*Entry, error) {
+func (d *DB) GetEntry(id string) (*Entry, error) {
+	return d.GetEntryWithDeleted(id, false)
+}
+
+func (d *DB) GetEntryWithDeleted(id string, includeDeleted bool) (*Entry, error) {
 	var e Entry
-	err := d.conn.QueryRow(
-		"SELECT id, title, tags, created_at, updated_at FROM entries WHERE id = ?",
-		id,
-	).Scan(&e.ID, &e.Title, &e.Tags, &e.CreatedAt, &e.UpdatedAt)
+	hasDeleted := d.hasDeletedColumn("entries")
+	var query string
+
+	if !hasDeleted || includeDeleted {
+		query = "SELECT id, title, tags, created_at, updated_at FROM entries WHERE id = ?"
+	} else {
+		query = "SELECT id, title, tags, created_at, updated_at FROM entries WHERE id = ? AND deleted_at IS NULL"
+	}
+
+	err := d.conn.QueryRow(query, id).Scan(&e.ID, &e.Title, &e.Tags, &e.CreatedAt, &e.UpdatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrNotFound
@@ -155,9 +163,41 @@ func (d *DB) GetEntryByTitle(title string) (*Entry, error) {
 }
 
 func (d *DB) ListEntries() ([]Entry, error) {
-	rows, err := d.conn.Query(
-		"SELECT id, title, tags, created_at, updated_at FROM entries ORDER BY updated_at DESC",
-	)
+	return d.ListEntriesWithDeleted(false)
+}
+
+// hasDeletedColumn checks if the deleted_at column exists in a table
+func (d *DB) hasDeletedColumn(table string) bool {
+	rows, err := d.conn.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return false
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, pk int
+		var dflt interface{}
+		rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk)
+		if name == "deleted_at" {
+			return true
+		}
+	}
+	return false
+}
+
+func (d *DB) ListEntriesWithDeleted(includeDeleted bool) ([]Entry, error) {
+	hasDeleted := d.hasDeletedColumn("entries")
+
+	var query string
+	if !hasDeleted || includeDeleted {
+		query = "SELECT id, title, tags, created_at, updated_at FROM entries ORDER BY updated_at DESC"
+	} else {
+		query = "SELECT id, title, tags, created_at, updated_at FROM entries WHERE deleted_at IS NULL ORDER BY updated_at DESC"
+	}
+
+	rows, err := d.conn.Query(query)
 	if err != nil {
 		return nil, err
 	}
@@ -174,33 +214,40 @@ func (d *DB) ListEntries() ([]Entry, error) {
 	return entries, rows.Err()
 }
 
-func (d *DB) UpdateEntryTime(id int64) error {
+func (d *DB) UpdateEntryTime(id string) error {
 	_, err := d.conn.Exec("UPDATE entries SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", id)
 	return err
 }
 
 // Article operations
 
-func (d *DB) AddArticle(entryID int64, title, content string) (int64, error) {
-	result, err := d.conn.Exec(
-		"INSERT INTO articles (entry_id, title, content) VALUES (?, ?, ?)",
-		entryID, title, content,
+func (d *DB) AddArticle(id, entryID, title, content string) error {
+	_, err := d.conn.Exec(
+		"INSERT INTO articles (id, entry_id, title, content) VALUES (?, ?, ?, ?)",
+		id, entryID, title, content,
 	)
 	if err != nil {
-		return 0, err
+		return err
 	}
 
 	// Update entry timestamp
-	d.UpdateEntryTime(entryID)
-
-	return result.LastInsertId()
+	return d.UpdateEntryTime(entryID)
 }
 
-func (d *DB) GetArticles(entryID int64) ([]Article, error) {
-	rows, err := d.conn.Query(
-		"SELECT id, entry_id, title, content, created_at FROM articles WHERE entry_id = ? ORDER BY created_at",
-		entryID,
-	)
+func (d *DB) GetArticles(entryID string) ([]Article, error) {
+	return d.GetArticlesWithDeleted(entryID, false)
+}
+
+func (d *DB) GetArticlesWithDeleted(entryID string, includeDeleted bool) ([]Article, error) {
+	hasDeleted := d.hasDeletedColumn("articles")
+	var query string
+	if !hasDeleted || includeDeleted {
+		query = "SELECT id, entry_id, title, content, created_at FROM articles WHERE entry_id = ? ORDER BY created_at"
+	} else {
+		query = "SELECT id, entry_id, title, content, created_at FROM articles WHERE entry_id = ? AND deleted_at IS NULL ORDER BY created_at"
+	}
+
+	rows, err := d.conn.Query(query, entryID)
 	if err != nil {
 		return nil, err
 	}
@@ -217,12 +264,22 @@ func (d *DB) GetArticles(entryID int64) ([]Article, error) {
 	return articles, rows.Err()
 }
 
-func (d *DB) GetArticle(id int64) (*Article, error) {
+func (d *DB) GetArticle(id string) (*Article, error) {
+	return d.GetArticleWithDeleted(id, false)
+}
+
+func (d *DB) GetArticleWithDeleted(id string, includeDeleted bool) (*Article, error) {
 	var a Article
-	err := d.conn.QueryRow(
-		"SELECT id, entry_id, title, content, created_at FROM articles WHERE id = ?",
-		id,
-	).Scan(&a.ID, &a.EntryID, &a.Title, &a.Content, &a.CreatedAt)
+	hasDeleted := d.hasDeletedColumn("articles")
+	var query string
+
+	if !hasDeleted || includeDeleted {
+		query = "SELECT id, entry_id, title, content, created_at FROM articles WHERE id = ?"
+	} else {
+		query = "SELECT id, entry_id, title, content, created_at FROM articles WHERE id = ? AND deleted_at IS NULL"
+	}
+
+	err := d.conn.QueryRow(query, id).Scan(&a.ID, &a.EntryID, &a.Title, &a.Content, &a.CreatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrNotFound
@@ -232,9 +289,9 @@ func (d *DB) GetArticle(id int64) (*Article, error) {
 	return &a, nil
 }
 
-func (d *DB) DeleteArticle(id int64) error {
+func (d *DB) DeleteArticle(id string) error {
 	// Get entry_id before delete
-	var entryID int64
+	var entryID string
 	d.conn.QueryRow("SELECT entry_id FROM articles WHERE id = ?", id).Scan(&entryID)
 
 	_, err := d.conn.Exec("DELETE FROM articles WHERE id = ?", id)
@@ -246,7 +303,7 @@ func (d *DB) DeleteArticle(id int64) error {
 	return d.UpdateEntryTime(entryID)
 }
 
-func (d *DB) DeleteEntry(id int64) error {
+func (d *DB) DeleteEntry(id string) error {
 	_, err := d.conn.Exec("DELETE FROM entries WHERE id = ?", id)
 	return err
 }
@@ -254,14 +311,27 @@ func (d *DB) DeleteEntry(id int64) error {
 // Search operations
 
 func (d *DB) Search(query string, topK int) ([]SearchResult, error) {
+	return d.SearchWithDeleted(query, topK, false)
+}
+
+func (d *DB) SearchWithDeleted(query string, topK int, includeDeleted bool) ([]SearchResult, error) {
+	hasDeleted := d.hasDeletedColumn("entries") && d.hasDeletedColumn("articles")
+
+	var whereClause string
+	if !hasDeleted || includeDeleted {
+		whereClause = "articles_fts MATCH ?"
+	} else {
+		whereClause = "articles_fts MATCH ? AND a.deleted_at IS NULL AND e.deleted_at IS NULL"
+	}
+
 	rows, err := d.conn.Query(`
 		SELECT a.id, a.entry_id, a.title, a.content, a.created_at,
 			   e.title as entry_title,
 			   bm25(articles_fts) as score
 		FROM articles_fts
-		JOIN articles a ON articles_fts.rowid = a.id
+		JOIN articles a ON articles_fts.rowid = a.rowid
 		JOIN entries e ON a.entry_id = e.id
-		WHERE articles_fts MATCH ?
+		WHERE `+whereClause+`
 		ORDER BY score
 		LIMIT ?
 	`, query, topK)
@@ -299,4 +369,55 @@ func (d *DB) ArticleCount() (int, error) {
 
 func (d *DB) Close() error {
 	return d.conn.Close()
+}
+
+type Stats struct {
+	TotalEntries    int
+	ActiveEntries   int
+	DeletedEntries  int
+	TotalArticles   int
+	ActiveArticles  int
+	DeletedArticles int
+	TotalHistory    int
+}
+
+func (d *DB) Stats() (*Stats, error) {
+	s := &Stats{}
+
+	if err := d.conn.QueryRow("SELECT COUNT(*) FROM entries").Scan(&s.TotalEntries); err != nil {
+		return nil, err
+	}
+	if err := d.conn.QueryRow("SELECT COUNT(*) FROM articles").Scan(&s.TotalArticles); err != nil {
+		return nil, err
+	}
+
+	// Check if deleted_at column exists
+	hasDeletedAt := d.hasDeletedColumn("entries")
+
+	if hasDeletedAt {
+		if err := d.conn.QueryRow("SELECT COUNT(*) FROM entries WHERE deleted_at IS NULL").Scan(&s.ActiveEntries); err != nil {
+			return nil, err
+		}
+		if err := d.conn.QueryRow("SELECT COUNT(*) FROM entries WHERE deleted_at IS NOT NULL").Scan(&s.DeletedEntries); err != nil {
+			return nil, err
+		}
+		if err := d.conn.QueryRow("SELECT COUNT(*) FROM articles WHERE deleted_at IS NULL").Scan(&s.ActiveArticles); err != nil {
+			return nil, err
+		}
+		if err := d.conn.QueryRow("SELECT COUNT(*) FROM articles WHERE deleted_at IS NOT NULL").Scan(&s.DeletedArticles); err != nil {
+			return nil, err
+		}
+	} else {
+		s.ActiveEntries = s.TotalEntries
+		s.ActiveArticles = s.TotalArticles
+	}
+
+	// History table may not exist yet
+	var historyCount int
+	err := d.conn.QueryRow("SELECT COUNT(*) FROM history").Scan(&historyCount)
+	if err == nil {
+		s.TotalHistory = historyCount
+	}
+
+	return s, nil
 }

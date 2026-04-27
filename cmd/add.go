@@ -10,6 +10,7 @@ import (
 
 	"github.com/rwese/kb/internal/config"
 	"github.com/rwese/kb/internal/db"
+	"github.com/rwese/kb/internal/id"
 	"github.com/urfave/cli/v3"
 )
 
@@ -71,21 +72,21 @@ func (c *Commands) add() *cli.Command {
 				content = readMultiline()
 			}
 
-			// Create entry
-			entryID, err := database.AddEntry(title, tags)
-			if err != nil {
+			// Generate ID and create entry
+			entryID := id.Entry()
+			if err := database.AddEntry(entryID, title, tags); err != nil {
 				return err
 			}
 
 			// Add initial article
 			if content != "" {
-				articleID, err := database.AddArticle(entryID, "", content)
-				if err != nil {
+				articleID := id.Article(entryID)
+				if err := database.AddArticle(articleID, entryID, "", content); err != nil {
 					return err
 				}
-				fmt.Printf("Added entry #%d with article #%d\n", entryID, articleID)
+				fmt.Printf("Added entry %s with article %s\n", entryID, articleID)
 			} else {
-				fmt.Printf("Added entry #%d\n", entryID)
+				fmt.Printf("Added entry %s\n", entryID)
 			}
 
 			return nil

@@ -20,7 +20,8 @@ func (c *Commands) search() *cli.Command {
 			&cli.StringFlag{Name: "context-file", Aliases: []string{"F"}, Usage: "Read context from file"},
 			&cli.StringFlag{Name: "prompt", Aliases: []string{"p"}, Usage: "Final prompt (weighted higher)"},
 			&cli.IntFlag{Name: "top-k", Aliases: []string{"k"}, Usage: "Number of results"},
-			&cli.StringFlag{Name: "format", Aliases: []string{"o"}, Usage: "Output format", DefaultText: "text"},
+			&cli.StringFlag{Name: "format", Aliases: []string{"o"}, Usage: "Output format", DefaultText: "markdown"},
+			&cli.BoolFlag{Name: "all", Usage: "Include deleted entries"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			cfg, err := config.Discover()
@@ -36,9 +37,7 @@ func (c *Commands) search() *cli.Command {
 
 			args := cmd.Args()
 			var query string
-			var topK int
 
-			// Determine query
 			if p := cmd.String("prompt"); p != "" {
 				query = p
 			} else if args.Len() > 0 {
@@ -47,15 +46,12 @@ func (c *Commands) search() *cli.Command {
 				return fmt.Errorf("query required")
 			}
 
-			// Get top-k
-			if k := cmd.Int("top-k"); k > 0 {
-				topK = k
-			} else {
+			topK := cmd.Int("top-k")
+			if topK == 0 {
 				topK = cfg.TopK
 			}
 
-			// Perform search
-			results, err := database.Search(query, topK)
+			results, err := database.SearchWithDeleted(query, topK, cmd.Bool("all"))
 			if err != nil {
 				return err
 			}
@@ -65,9 +61,7 @@ func (c *Commands) search() *cli.Command {
 				return nil
 			}
 
-			// Format output
-			format := cmd.String("format")
-			return formatSearchResults(results, format)
+			return formatSearchResults(results, cmd.String("format"))
 		},
 	}
 }
@@ -80,23 +74,23 @@ func formatSearchResults(results []db.SearchResult, format string) error {
 		return enc.Encode(results)
 	case "simple":
 		for _, r := range results {
-			fmt.Printf("[%.2f] %s (entry #%d)\n%s\n\n", r.Score, r.EntryTitle, r.EntryID, r.Content)
+			fmt.Printf("[%.2f] %s (entry %s)\n%s\n\n", r.Score, r.EntryTitle, r.EntryID, r.Content)
 		}
-	default: // text
+	default: // markdown
+		fmt.Printf("## Search Results (%d found)\n\n", len(results))
 		for i, r := range results {
-			fmt.Printf("--- Result #%d [score: %s] ---\n", i+1, formatScore(r.Score))
-			fmt.Printf("Entry: %s (#%d)\n", r.EntryTitle, r.EntryID)
+			fmt.Printf("### Result #%d\n\n", i+1)
+			fmt.Printf("| Property | Value |\n|---------|-------|\n")
+			fmt.Printf("| Entry | [%s](%s) |\n", r.EntryTitle, r.EntryID)
+			fmt.Printf("| Entry ID | %s |\n", r.EntryID)
+			fmt.Printf("| Score | %.2f |\n", r.Score)
 			if r.Title != "" {
-				fmt.Printf("Article title: %s\n", r.Title)
+				fmt.Printf("| Article Title | %s |\n", r.Title)
 			}
-			fmt.Printf("\n%s\n\n", r.Content)
+			fmt.Printf("\n---\n\n%s\n\n", r.Content)
 		}
 	}
 	return nil
-}
-
-func formatScore(s float64) string {
-	return fmt.Sprintf("%.2f", s)
 }
 
 func formatJSON(v interface{}) error {

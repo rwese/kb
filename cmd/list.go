@@ -3,8 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
-	"text/tabwriter"
 
 	"github.com/rwese/kb/internal/config"
 	"github.com/rwese/kb/internal/db"
@@ -18,7 +16,8 @@ func (c *Commands) list() *cli.Command {
 		Usage:   "List all entries and their articles",
 		Flags: []cli.Flag{
 			&cli.BoolFlag{Name: "json", Usage: "Output as JSON"},
-			&cli.BoolFlag{Name: "articles", Aliases: []string{"a"}, Usage: "Show article count per entry"},
+			&cli.BoolFlag{Name: "articles", Usage: "Show article count per entry"},
+			&cli.BoolFlag{Name: "all", Usage: "Include deleted entries"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			cfg, err := config.Discover()
@@ -32,7 +31,7 @@ func (c *Commands) list() *cli.Command {
 			}
 			defer database.Close()
 
-			entries, err := database.ListEntries()
+			entries, err := database.ListEntriesWithDeleted(cmd.Bool("all"))
 			if err != nil {
 				return err
 			}
@@ -43,7 +42,6 @@ func (c *Commands) list() *cli.Command {
 			}
 
 			if cmd.Bool("json") {
-				// Build full structure
 				type EntryJSON struct {
 					db.Entry
 					Articles []db.Article `json:"articles"`
@@ -56,15 +54,14 @@ func (c *Commands) list() *cli.Command {
 				return formatJSON(result)
 			}
 
-			// Plain text
-			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			fmt.Fprintf(w, "ID\tTitle\tTags\tArticles\tUpdated\n")
+			// Markdown table as default
+			fmt.Println("| ID | Title | Tags | Articles | Updated |")
+			fmt.Println("|----|-------|------|----------|---------|")
 			for _, e := range entries {
 				articles, _ := database.GetArticles(e.ID)
-				fmt.Fprintf(w, "%d\t%s\t%s\t%d\t%s\n",
+				fmt.Printf("| %s | %s | %s | %d | %s |\n",
 					e.ID, e.Title, e.Tags, len(articles), e.UpdatedAt)
 			}
-			w.Flush()
 
 			return nil
 		},
