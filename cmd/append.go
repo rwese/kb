@@ -8,6 +8,7 @@ import (
 
 	"github.com/rwese/kb/internal/config"
 	"github.com/rwese/kb/internal/db"
+	"github.com/rwese/kb/internal/embed"
 	"github.com/rwese/kb/internal/id"
 	"github.com/urfave/cli/v3"
 )
@@ -79,6 +80,33 @@ func (c *Commands) append() *cli.Command {
 			articleID := id.Article(entryID)
 			if err := database.AddArticle(articleID, entryID, title, content); err != nil {
 				return err
+			}
+
+			// Compute and store embedding if embedder is available
+			e := embed.NewEmbedder(cfg)
+			if cfg.Embedder == "local" || cfg.Embedder == "ollama" {
+				// For local embedder, check if assets are available
+				if cfg.Embedder == "local" {
+					le, ok := e.(*embed.LocalEmbedder)
+					if ok && !le.IsAvailable() {
+						fmt.Printf("Added article %s to entry %s (no embedding)\n", articleID, entryID)
+						return nil
+					}
+				}
+
+				// Compute embedding
+				emb, err := e.Embed(ctx, content)
+				if err != nil {
+					fmt.Printf("Warning: failed to compute embedding: %v\n", err)
+					fmt.Printf("Added article %s to entry %s\n", articleID, entryID)
+					return nil
+				}
+
+				if emb != nil {
+					if err := database.SaveVector(articleID, emb, cfg.Local.Model); err != nil {
+						fmt.Printf("Warning: failed to store embedding: %v\n", err)
+					}
+				}
 			}
 
 			fmt.Printf("Added article %s to entry %s\n", articleID, entryID)

@@ -1,126 +1,127 @@
 package search
 
 import (
+	"context"
 	"math"
+	"sort"
 
 	"github.com/rwese/kb/internal/db"
 	"github.com/rwese/kb/internal/embed"
 )
 
 type Ranker struct {
-	PromptWeight  float64
-	ContextWeight float64
 	BM25Weight    float64
+	SemanticWeight float64
+}
+
+func NewRanker(bm25Weight, semanticWeight float64) *Ranker {
+	return &Ranker{
+		BM25Weight:    bm25Weight,
+		SemanticWeight: semanticWeight,
+	}
 }
 
 func DefaultRanker() *Ranker {
 	return &Ranker{
-		PromptWeight:  3.0,
-		ContextWeight: -0.5,
-		BM25Weight:    1.0,
+		BM25Weight:    0.3,
+		SemanticWeight: 0.7,
 	}
 }
 
-// WeightedResults re-ranks results using prompt/context embeddings
-func (r *Ranker) WeightedResults(
+// HybridSearch combines BM25 scores with semantic similarity
+func (r *Ranker) HybridSearch(
+	ctx context.Context,
 	results []db.SearchResult,
-	promptEmbedding []float32,
-	contextEmbedding []float32,
+	database *db.DB,
+	queryEmbedding []float32,
 ) []db.SearchResult {
-	if len(results) == 0 || promptEmbedding == nil {
+	if len(results) == 0 || queryEmbedding == nil {
 		return results
 	}
 
-	// Calculate embedding for concatenated content
-	for i := range results {
-		content := results[i].Title + " " + results[i].Content
+	// Find min/max BM25 scores for normalization
+	var minBM25, maxBM25 float64 = math.MaxFloat64, -math.MaxFloat64
+	for _, res := range results {
+		if res.Score < minBM25 {
+			minBM25 = res.Score
+		}
+		if res.Score > maxBM25 {
+			maxBM25 = res.Score
+		}
+	}
 
-		promptSim := embed.Cosine(promptEmbedding, mustEmbed(content))
-		var contextSim float64
-		if contextEmbedding != nil {
-			contextSim = embed.Cosine(contextEmbedding, mustEmbed(content))
+	// Calculate hybrid scores
+	for i := range results {
+		// Normalize BM25 score to 0-1 (BM25 is typically negative, higher is better)
+		bm25Norm := NormalizeBM25(results[i].Score, minBM25, maxBM25)
+		results[i].BM25Score = bm25Norm
+
+		// Get article vector and compute similarity
+		vec, err := database.GetVector(results[i].ID)
+		if err != nil || vec == nil {
+			// No vector available, use BM25 only
+			results[i].SemanticScore = 0
+			results[i].Score = r.BM25Weight*bm25Norm + r.SemanticWeight*0
+			continue
 		}
 
-		// Normalize BM25 (typically negative, higher is better)
-		bm25Score := -results[i].Score + 1
+		// Compute cosine similarity
+		cosineSim := embed.Cosine(queryEmbedding, vec)
+		results[i].SemanticScore = cosineSim
 
 		// Combined weighted score
-		results[i].Score = r.BM25Weight*bm25Score +
-			r.PromptWeight*promptSim +
-			r.ContextWeight*contextSim
+		results[i].Score = r.BM25Weight*bm25Norm + r.SemanticWeight*cosineSim
 	}
 
 	// Sort by score descending
-	for i := 0; i < len(results)-1; i++ {
-		for j := i + 1; j < len(results); j++ {
-			if results[j].Score > results[i].Score {
-				results[i], results[j] = results[j], results[i]
-			}
-		}
-	}
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Score > results[j].Score
+	})
 
 	return results
 }
 
-func mustEmbed(text string) []float32 {
-	// Placeholder - actual implementation would use the embedder
-	// This is a zero vector placeholder for when embedder is None
-	return make([]float32, 384)
+// NormalizeBM25 converts BM25 score to 0-1 range using sigmoid
+func NormalizeBM25(score, min, max float64) float64 {
+	// BM25 scores are typically negative, use sigmoid for normalization
+	// Map to approximately 0-1 range
+	if max-min == 0 {
+		return 0.5
+	}
+
+	// Linear normalization adjusted for negative BM25
+	normalized := (score - min) / (max - min)
+	return math.Max(0, math.Min(1, normalized))
 }
 
-// HybridSearch combines BM25 and semantic search
-func HybridSearch(bm25Results, semanticResults []db.SearchResult, topK int) []db.SearchResult {
-	// Reciprocal Rank Fusion
-	scores := make(map[string]float64)
-
-	for i, r := range bm25Results {
-		scores[r.ID] += 1.0 / float64(61+i) // rank starts at 1
+// ReciprocalRankFusion combines ranked lists using RRF
+func ReciprocalRankFusion(results [][]db.SearchResult, k int) []db.SearchResult {
+	if k == 0 {
+		k = 60
 	}
-	for i, r := range semanticResults {
-		scores[r.ID] += 1.0 / float64(61+i)
+
+	scores := make(map[string]float64)
+	resultMap := make(map[string]db.SearchResult)
+
+	for _, resultList := range results {
+		for rank, r := range resultList {
+			docID := r.ID
+			scores[docID] += 1.0 / float64(k+rank+1)
+			resultMap[docID] = r
+		}
 	}
 
 	// Sort by combined score
 	sorted := make([]db.SearchResult, 0, len(scores))
 	for id, score := range scores {
-		// Find the entry
-		for _, r := range bm25Results {
-			if r.ID == id {
-				r.Score = score
-				sorted = append(sorted, r)
-				break
-			}
-		}
-		for _, r := range semanticResults {
-			if r.ID == id {
-				found := false
-				for _, s := range sorted {
-					if s.ID == id {
-						found = true
-						break
-					}
-				}
-				if !found {
-					r.Score = score
-					sorted = append(sorted, r)
-				}
-				break
-			}
-		}
+		r := resultMap[id]
+		r.Score = score
+		sorted = append(sorted, r)
 	}
 
-	// Sort by score
-	for i := 0; i < len(sorted)-1; i++ {
-		for j := i + 1; j < len(sorted); j++ {
-			if sorted[j].Score > sorted[i].Score {
-				sorted[i], sorted[j] = sorted[j], sorted[i]
-			}
-		}
-	}
-
-	if len(sorted) > topK {
-		sorted = sorted[:topK]
-	}
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].Score > sorted[j].Score
+	})
 
 	return sorted
 }

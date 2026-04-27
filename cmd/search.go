@@ -8,6 +8,8 @@ import (
 
 	"github.com/rwese/kb/internal/config"
 	"github.com/rwese/kb/internal/db"
+	"github.com/rwese/kb/internal/embed"
+	"github.com/rwese/kb/internal/search"
 	"github.com/urfave/cli/v3"
 )
 
@@ -22,6 +24,7 @@ func (c *Commands) search() *cli.Command {
 			&cli.IntFlag{Name: "top-k", Aliases: []string{"k"}, Usage: "Number of results"},
 			&cli.StringFlag{Name: "format", Aliases: []string{"o"}, Usage: "Output format", DefaultText: "markdown"},
 			&cli.BoolFlag{Name: "all", Usage: "Include deleted entries"},
+			&cli.BoolFlag{Name: "bm25-only", Usage: "Use BM25-only search (skip semantic)"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			cfg, err := config.Discover()
@@ -51,7 +54,8 @@ func (c *Commands) search() *cli.Command {
 				topK = cfg.TopK
 			}
 
-			results, err := database.SearchWithDeleted(query, topK, cmd.Bool("all"))
+			// Get BM25 results
+			results, err := database.SearchWithDeleted(query, topK*2, cmd.Bool("all"))
 			if err != nil {
 				return err
 			}
@@ -61,12 +65,56 @@ func (c *Commands) search() *cli.Command {
 				return nil
 			}
 
-			return formatSearchResults(results, cmd.String("format"))
+			// Try hybrid search if embeddings are available
+			if !cmd.Bool("bm25-only") && (cfg.Embedder == "local" || cfg.Embedder == "ollama") {
+				e := embed.NewEmbedder(cfg)
+
+				// Check if local embedder is ready
+				if cfg.Embedder == "local" {
+					le, ok := e.(*embed.LocalEmbedder)
+					if ok && !le.IsAvailable() {
+						// Local embedder not ready, skip semantic search
+						return formatSearchResults(results[:min(len(results), topK)], cmd.String("format"), cmd.Bool("bm25-only"))
+					}
+				}
+
+				// Compute query embedding
+				queryEmb, err := e.Embed(ctx, query)
+				if err == nil && queryEmb != nil {
+					// Apply hybrid ranking
+					bm25Weight := cfg.Local.BM25Weight
+					semanticWeight := cfg.Local.SemanticWeight
+
+					// Ensure weights sum to 1
+					total := bm25Weight + semanticWeight
+					if total > 0 {
+						bm25Weight /= total
+						semanticWeight /= total
+					}
+
+					ranker := search.NewRanker(bm25Weight, semanticWeight)
+					results = ranker.HybridSearch(ctx, results, database, queryEmb)
+				}
+			}
+
+			// Trim to requested count
+			if len(results) > topK {
+				results = results[:topK]
+			}
+
+			return formatSearchResults(results, cmd.String("format"), cmd.Bool("bm25-only"))
 		},
 	}
 }
 
-func formatSearchResults(results []db.SearchResult, format string) error {
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func formatSearchResults(results []db.SearchResult, format string, bm25Only bool) error {
 	switch format {
 	case "json":
 		enc := json.NewEncoder(os.Stdout)
@@ -78,11 +126,17 @@ func formatSearchResults(results []db.SearchResult, format string) error {
 		}
 	default: // markdown
 		fmt.Printf("## Search Results (%d found)\n\n", len(results))
+		if !bm25Only {
+			fmt.Println("*Using hybrid BM25 + semantic search*")
+		}
 		for i, r := range results {
 			fmt.Printf("### Result #%d\n\n", i+1)
 			fmt.Printf("- Entry: [%s](%s)\n", r.EntryTitle, r.EntryID)
 			fmt.Printf("- Entry ID: %s\n", r.EntryID)
-			fmt.Printf("- Score: %.2f\n", r.Score)
+			fmt.Printf("- Score: %.3f\n", r.Score)
+			if r.BM25Score > 0 || r.SemanticScore > 0 {
+				fmt.Printf("  (BM25: %.2f + Semantic: %.2f)\n", r.BM25Score, r.SemanticScore)
+			}
 			if r.Title != "" {
 				fmt.Printf("- Article: %s\n", r.Title)
 			}

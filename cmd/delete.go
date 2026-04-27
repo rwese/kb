@@ -35,10 +35,18 @@ func (c *Commands) delete() *cli.Command {
 
 			// Detect if this is an article ID (contains '-')
 			if strings.Contains(id, "-") {
+				// Delete vector first
+				database.DeleteVector(id)
 				return database.DeleteArticle(id)
 			}
 
-			// Entry ID
+			// Entry ID - delete all associated vectors first
+			vectors, err := database.GetArticleVectors(id)
+			if err == nil {
+				for articleID := range vectors {
+					database.DeleteVector(articleID)
+				}
+			}
 			return database.DeleteEntry(id)
 		},
 	}

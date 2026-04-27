@@ -8,10 +8,10 @@
 - [x] Create `scripts/build-llama.sh` for cross-platform compilation
 
 ## Phase 2: Integration
-- [ ] Update `kb add` to compute + store embeddings
-- [ ] Update `kb append` to compute + store embeddings
-- [ ] Update `kb delete` to remove vector entries
-- [ ] Implement hybrid search in `kb search`
+- [x] Update `kb add` to compute + store embeddings
+- [x] Update `kb append` to compute + store embeddings
+- [x] Update `kb delete` to remove vector entries
+- [x] Implement hybrid search in `kb search`
 
 ## Phase 3: Polish
 - [x] Add `kb download` command
