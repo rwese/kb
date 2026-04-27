@@ -7,6 +7,7 @@ import (
 
 	"github.com/rwese/kb/internal/config"
 	"github.com/rwese/kb/internal/db"
+	"github.com/rwese/kb/internal/embed"
 	"github.com/urfave/cli/v3"
 )
 
@@ -70,7 +71,37 @@ func (c *Commands) check() *cli.Command {
 					} else {
 						fmt.Printf("✓ FTS search: OK (test returned %d results)\n", len(results))
 					}
+
+					// Check vectors
+					vectorCount, err := database.VectorCount()
+					if err != nil {
+						fmt.Println("✗ Failed to query vectors:", err)
+						errors++
+					} else {
+						fmt.Printf("✓ Vectors: %d indexed\n", vectorCount)
+					}
 				}
+			}
+
+			// Check embedder status
+			fmt.Println()
+			switch cfg.Embedder {
+			case "local":
+				fmt.Printf("Embedder: local (%s)\n", cfg.Local.Model)
+				ok, msg := embed.CheckAssets(cfg.Local.CacheDir)
+				if ok {
+					fmt.Printf("✓ Library: %s\n", embed.LibraryFileFromCache(cfg.Local.CacheDir))
+					fmt.Printf("✓ Model:   %s\n", embed.ModelFileFromCache(cfg.Local.CacheDir))
+				} else {
+					fmt.Printf("✗ Assets: %s\n", msg)
+					fmt.Println("  Run 'kb download' to fetch assets")
+					errors++
+				}
+			case "ollama":
+				fmt.Printf("Embedder: ollama (%s)\n", cfg.Ollama.Model)
+				fmt.Printf("Base URL: %s\n", cfg.Ollama.BaseURL)
+			default:
+				fmt.Println("Embedder: none (BM25-only mode)")
 			}
 
 			// Summary

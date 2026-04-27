@@ -1,33 +1,33 @@
-# kb CLI - Implementation Tasks
+# kb-local-embeddings Implementation
 
-## Core
-- [x] Project structure & go.mod
-- [x] Config discovery
-- [x] SQLite+FTS5 database
-- [x] `kb init` command
-- [x] `kb add` command
-- [x] `kb search` command
-- [x] `kb config` command
-- [x] Ollama embedder implementation
-- [ ] Weighted retrieval scoring (re-ranking with embeddings)
+## Phase 1: Core Infrastructure
+- [x] Create `internal/embed/local.go` with llama.cpp interface
+- [x] Create `internal/embed/download.go` with GitHub releases integration
+- [x] Update `internal/config/discover.go` with local config
+- [x] Add SQLite vectors table migration
+- [x] Create `scripts/build-llama.sh` for cross-platform compilation
 
-## Articles (multi-entry knowledgebase items)
-- [x] Add `articles` table (belongs to entry, has content/chunks)
-- [x] `kb append` - Add article to existing entry
-- [x] `kb list` - List entries and their articles
-- [x] `kb get` - Get entry with specific/all articles
-- [x] `kb delete` - Delete entry or article
-- [x] Update FTS to index articles separately
+## Phase 2: Integration
+- [ ] Update `kb add` to compute + store embeddings
+- [ ] Update `kb append` to compute + store embeddings
+- [ ] Update `kb delete` to remove vector entries
+- [ ] Implement hybrid search in `kb search`
 
-## Testing
-- [x] Verify `go build` succeeds
-- [x] Test `kb init`
-- [x] Test `kb add` with inline content
-- [x] Test `kb append` to existing entry
-- [x] Test `kb list`
-- [x] Test `kb get`
-- [x] Test `kb search`
+## Phase 3: Polish
+- [x] Add `kb download` command
+- [x] Enhance `kb check` with embedder status
+- [ ] Progress indicators for downloads
+- [ ] Graceful degradation on cache dir issues
 
-## Polish
-- [x] Add `--json` output for search
-- [ ] man page
+## Phase 4: Release
+- [ ] CI/CD pipeline for multi-platform builds
+- [ ] GitHub Releases with asset upload
+- [ ] Documentation update
+- [ ] Version bump
+
+## Success Criteria
+- [ ] `kb add -t "test" -c "content"` stores vector in DB
+- [ ] `kb search "content"` returns semantic matches
+- [ ] `kb` works on fresh install
+- [ ] `kb check` reports green for local embedder
+- [ ] No Ollama installation required for embeddings

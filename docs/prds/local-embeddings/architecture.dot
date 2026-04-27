@@ -1,0 +1,76 @@
+digraph KB_Architecture {
+    rankdir=TB;
+    node [shape=box, style=rounded];
+
+    // User Interface
+    CLI [label="CLI (urfave/cli)"];
+
+    // Core Components
+    Config [label="Config\n(discover.go)"];
+    DB [label="Database\n(SQLite + FTS5)"];
+    Search [label="Search\n(BM25 + Hybrid)"];
+    Embed [label="Embedder\n(Interface)"];
+
+    // Embedder Implementations
+    subgraph cluster_embed {
+        label="Embedder Implementations";
+        style=filled;
+        color=lightgrey;
+
+        None [label="NoneEmbedder\n(BM25-only)"];
+        Ollama [label="OllamaEmbedder\n(Remote)"];
+        Local [label="LocalEmbedder\n(llama.cpp)"];
+    }
+
+    // Local Embedder Dependencies
+    subgraph cluster_local {
+        label="Local Embedder Components";
+        style=filled;
+        color=lightblue;
+
+        Download [label="Download\n(download.go)"];
+        LlamaGo [label="libllama_go\n(Compiled llama.cpp)"];
+        GGUF [label="GGUF Model\n(all-MiniLM-L6-v2)"];
+    }
+
+    // Vector Storage
+    subgraph cluster_storage {
+        label="Storage";
+        style=filled;
+        color=lightgreen;
+
+        Entries [label="entries"];
+        Articles [label="articles"];
+        Vectors [label="vectors\n(sqlite-vec)"];
+        FTS [label="fts_articles\n(FTS5)"];
+    }
+
+    // Relationships
+    CLI -> Config;
+    CLI -> DB;
+    CLI -> Search;
+    Search -> Embed;
+
+    Embed -> None;
+    Embed -> Ollama;
+    Embed -> Local;
+
+    Local -> Download;
+    Download -> LlamaGo [label="Download on demand"];
+    Download -> GGUF [label="Download on demand"];
+
+    Local -> LlamaGo;
+    Local -> GGUF;
+
+    DB -> Entries;
+    DB -> Articles;
+    DB -> Vectors;
+    DB -> FTS;
+
+    // Styling
+    None [style=filled, fillcolor=lightyellow];
+    Ollama [style=filled, fillcolor=lightyellow];
+    Local [style=filled, fillcolor=lightgreen];
+    Vectors [style=filled, fillcolor=lightcyan];
+    FTS [style=filled, fillcolor=lightcyan];
+}

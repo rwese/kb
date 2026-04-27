@@ -8,15 +8,23 @@ import (
 )
 
 type Config struct {
-	DBPath   string `yaml:"db_path"`
-	Embedder string `yaml:"embedder"`
-	Ollama   OllamaConfig `yaml:"ollama"`
-	TopK     int    `yaml:"top_k"`
+	DBPath   string        `yaml:"db_path"`
+	Embedder string        `yaml:"embedder"`
+	Ollama   OllamaConfig  `yaml:"ollama"`
+	Local    LocalConfig   `yaml:"local"`
+	TopK     int           `yaml:"top_k"`
 }
 
 type OllamaConfig struct {
 	Model   string `yaml:"model"`
 	BaseURL string `yaml:"base_url"`
+}
+
+type LocalConfig struct {
+	Model           string  `yaml:"model"`
+	CacheDir        string  `yaml:"cache_dir"`
+	BM25Weight      float64 `yaml:"bm25_weight"`
+	SemanticWeight  float64 `yaml:"semantic_weight"`
 }
 
 func Discover() (*Config, error) {
@@ -50,5 +58,11 @@ func Discover() (*Config, error) {
 		DBPath:   filepath.Join(os.Getenv("HOME"), ".local", "share", "kb", "knowledgebase.db"),
 		Embedder: "none",
 		TopK:     5,
+		Local: LocalConfig{
+			Model:           "all-MiniLM-L6-v2-Q4_K_M",
+			CacheDir:        filepath.Join(os.Getenv("HOME"), ".cache", "kb"),
+			BM25Weight:      0.3,
+			SemanticWeight:  0.7,
+		},
 	}, nil
 }
