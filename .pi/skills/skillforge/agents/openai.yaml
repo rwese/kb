@@ -1,0 +1,3 @@
+interface:
+  display_name: "SkillForge,short_description=Manage AI agent skills with SkillForge CLI. Install, update, sync, and remove skills from agentskills.io or git repositories.,default_prompt=Install a skill, sync skills, check for updates, or manage skill repositories"
+  short_description: "SkillForge,short_description=Manage AI agent skills with helper"

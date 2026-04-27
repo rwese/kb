@@ -1,0 +1,10 @@
+# SkillForge metadata
+# Do not edit manually
+
+[metadata]
+version = 1
+source = "https://github.com/rwese/skillforge.git"
+commit = "aab4fa958405b370766c369afd4aa7a12fe588f2"
+skill = "skillforge"
+installed_at = "2026-04-27T18:27:41+02:00"
+path = ".pi/skills/skillforge"
