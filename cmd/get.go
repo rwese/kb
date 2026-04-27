@@ -83,7 +83,11 @@ func printEntryWithArticles(entry *db.Entry, articles []db.Article, asJSON bool)
 	if entry.Tags != "" {
 		fmt.Printf("Tags: %s\n\n", entry.Tags)
 	}
-	fmt.Printf("*Entry %s | Created: %s | Updated: %s*\n\n", entry.ID, entry.CreatedAt, entry.UpdatedAt)
+
+	fmt.Printf("## Metadata\n\n")
+	fmt.Printf("- ID: %s\n", entry.ID)
+	fmt.Printf("- Created: %s\n", entry.CreatedAt)
+	fmt.Printf("- Updated: %s\n\n", entry.UpdatedAt)
 
 	for i, a := range articles {
 		if a.Title != "" {
@@ -91,7 +95,8 @@ func printEntryWithArticles(entry *db.Entry, articles []db.Article, asJSON bool)
 		} else {
 			fmt.Printf("## Article %d\n\n", i+1)
 		}
-		fmt.Printf("*Added: %s*\n\n", a.CreatedAt)
+		fmt.Printf("## Metadata\n\n")
+		fmt.Printf("- Added: %s\n\n", a.CreatedAt)
 		fmt.Printf("---\n\n%s\n\n", a.Content)
 	}
 
@@ -108,7 +113,11 @@ func printEntry(entry *db.Entry, asJSON bool) error {
 	if entry.Tags != "" {
 		fmt.Printf("Tags: %s\n\n", entry.Tags)
 	}
-	fmt.Printf("*Entry %s | Created: %s | Updated: %s*\n", entry.ID, entry.CreatedAt, entry.UpdatedAt)
+
+	fmt.Printf("## Metadata\n\n")
+	fmt.Printf("- ID: %s\n", entry.ID)
+	fmt.Printf("- Created: %s\n", entry.CreatedAt)
+	fmt.Printf("- Updated: %s\n", entry.UpdatedAt)
 
 	return nil
 }
@@ -123,7 +132,10 @@ func printArticle(article *db.Article, asJSON bool) error {
 	if article.Title != "" {
 		fmt.Printf("**%s**\n\n", article.Title)
 	}
-	fmt.Printf("*Entry %s | Added: %s*\n\n", article.EntryID, article.CreatedAt)
+
+	fmt.Printf("## Metadata\n\n")
+	fmt.Printf("- Entry: %s\n", article.EntryID)
+	fmt.Printf("- Added: %s\n\n", article.CreatedAt)
 	fmt.Printf("---\n\n%s\n", article.Content)
 
 	return nil

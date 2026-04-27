@@ -80,12 +80,11 @@ func formatSearchResults(results []db.SearchResult, format string) error {
 		fmt.Printf("## Search Results (%d found)\n\n", len(results))
 		for i, r := range results {
 			fmt.Printf("### Result #%d\n\n", i+1)
-			fmt.Printf("| Property | Value |\n|---------|-------|\n")
-			fmt.Printf("| Entry | [%s](%s) |\n", r.EntryTitle, r.EntryID)
-			fmt.Printf("| Entry ID | %s |\n", r.EntryID)
-			fmt.Printf("| Score | %.2f |\n", r.Score)
+			fmt.Printf("- Entry: [%s](%s)\n", r.EntryTitle, r.EntryID)
+			fmt.Printf("- Entry ID: %s\n", r.EntryID)
+			fmt.Printf("- Score: %.2f\n", r.Score)
 			if r.Title != "" {
-				fmt.Printf("| Article Title | %s |\n", r.Title)
+				fmt.Printf("- Article: %s\n", r.Title)
 			}
 			fmt.Printf("\n---\n\n%s\n\n", r.Content)
 		}

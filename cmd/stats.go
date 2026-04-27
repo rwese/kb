@@ -32,24 +32,21 @@ func (c *Commands) stats() *cli.Command {
 			}
 
 			// Markdown format as default
-			fmt.Printf("## Database Statistics\n\n")
+			fmt.Printf("# Database Statistics\n\n")
 			fmt.Printf("**Path:** `%s`\n\n", cfg.DBPath)
 
-			fmt.Println("### Entries")
-			fmt.Printf("| Metric | Count |\n|--------|-------|\n")
-			fmt.Printf("| Total | %d |\n", stats.TotalEntries)
-			fmt.Printf("| Active | %d |\n", stats.ActiveEntries)
-			fmt.Printf("| Deleted | %d |\n\n", stats.DeletedEntries)
+			fmt.Println("## Entries")
+			fmt.Printf("- Total: %d\n", stats.TotalEntries)
+			fmt.Printf("- Active: %d\n", stats.ActiveEntries)
+			fmt.Printf("- Deleted: %d\n\n", stats.DeletedEntries)
 
-			fmt.Println("### Articles")
-			fmt.Printf("| Metric | Count |\n|--------|-------|\n")
-			fmt.Printf("| Total | %d |\n", stats.TotalArticles)
-			fmt.Printf("| Active | %d |\n", stats.ActiveArticles)
-			fmt.Printf("| Deleted | %d |\n\n", stats.DeletedArticles)
+			fmt.Println("## Articles")
+			fmt.Printf("- Total: %d\n", stats.TotalArticles)
+			fmt.Printf("- Active: %d\n", stats.ActiveArticles)
+			fmt.Printf("- Deleted: %d\n\n", stats.DeletedArticles)
 
-			fmt.Println("### History")
-			fmt.Printf("| Metric | Count |\n|--------|-------|\n")
-			fmt.Printf("| Total | %d |\n", stats.TotalHistory)
+			fmt.Println("## History")
+			fmt.Printf("- Total: %d\n", stats.TotalHistory)
 
 			return nil
 		},
