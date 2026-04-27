@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -48,6 +49,9 @@ func Discover() (*Config, error) {
 				if cfg.TopK == 0 {
 					cfg.TopK = 5
 				}
+				// Expand ~ in paths
+				cfg.DBPath = expandTilde(cfg.DBPath)
+				cfg.Local.CacheDir = expandTilde(cfg.Local.CacheDir)
 				return &cfg, nil
 			}
 		}
@@ -65,4 +69,12 @@ func Discover() (*Config, error) {
 			SemanticWeight:  0.7,
 		},
 	}, nil
+}
+
+// expandTilde expands ~ to $HOME
+func expandTilde(path string) string {
+	if strings.HasPrefix(path, "~/") {
+		return filepath.Join(os.Getenv("HOME"), path[2:])
+	}
+	return path
 }
