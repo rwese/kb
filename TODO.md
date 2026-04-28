@@ -10,13 +10,7 @@ Export kb knowledgebase entries to Obsidian-compatible markdown files with YAML 
 
 ### Ready
 
-- [ ] **Core Export** — Single entry → folder with article .md files + front matter
-- [ ] **Front Matter Generation** — YAML with title, tags, aliases, dates, kb_id
-- [ ] **Flat Directory Layout** — `output/{entry-title}/{article-1}.md`
-- [ ] **Filename Sanitization** — Slugify titles for folder/file names
-- [ ] **Conflict Detection** — Scan output dir, parse front matter, collect existing kb_ids
-- [ ] **Interactive Overwrite** — Prompt user for each conflicting entry
-- [ ] **Batch Export** — Export all entries with `--all` flag
+- [ ] ... (all tasks completed)
 
 ### Blocked
 
