@@ -1,36 +1,122 @@
-# kb-local-embeddings Implementation
+## Goal
 
-## Phase 1: Core Infrastructure ✅
-- [x] Create `internal/embed/local.go` with llama.cpp interface
-- [x] Create `internal/embed/download.go` with GitHub releases integration
-- [x] Update `internal/config/discover.go` with local config
-- [x] Add SQLite vectors table migration
-- [x] Create `scripts/build-llama.sh` for cross-platform compilation
+Export kb knowledgebase entries to Obsidian-compatible markdown files with YAML front matter in a flat directory structure, where each entry is a folder containing separate article files.
 
-## Phase 2: Integration ✅
-- [x] Update `kb add` to compute + store embeddings
-- [x] Update `kb append` to compute + store embeddings
-- [x] Update `kb delete` to remove vector entries
-- [x] Implement hybrid search in `kb search`
+## Export — TODO
 
-## Phase 3: Polish ✅
-- [x] Add `kb download` command
-- [x] Enhance `kb check` with embedder status
-- [ ] Progress indicators for downloads (working but 404 - no releases yet)
-- [ ] Graceful degradation on cache dir issues (working)
+### In Progress
 
-## Phase 4: Release ⏳
-- [ ] CI/CD pipeline for multi-platform builds
-- [ ] GitHub Releases with asset upload
-- [ ] Documentation update
-- [ ] Version bump
+- [ ] ...
 
-## Success Criteria Status
-- [ ] `kb add -t "test" -c "content"` stores vector in DB - *Pending: requires libllama_go library*
-- [ ] `kb search "content"` returns semantic matches - *Pending: requires library + model*
-- [ ] `kb check` reports green for local embedder - ✅ Working (shows warning when assets missing)
-- [ ] No Ollama installation required for embeddings - ✅ Infrastructure ready
+### Ready
 
-## Commits
-- `bf413f5` - Phase 1: Core infrastructure
-- `a5f19b1` - Phase 2: Integration
+- [ ] **Core Export** — Single entry → folder with article .md files + front matter
+- [ ] **Front Matter Generation** — YAML with title, tags, aliases, dates, kb_id
+- [ ] **Flat Directory Layout** — `output/{entry-title}/{article-1}.md`
+- [ ] **Filename Sanitization** — Slugify titles for folder/file names
+- [ ] **Conflict Detection** — Scan output dir, parse front matter, collect existing kb_ids
+- [ ] **Interactive Overwrite** — Prompt user for each conflicting entry
+- [ ] **Batch Export** — Export all entries with `--all` flag
+
+### Blocked
+
+- [ ] ...
+
+### Done
+
+- [x] Clarified requirements (flat dir, separate article files, title-based naming)
+- [x] Front matter `id` → `kb_id`; articles use article's kb_id
+- [x] Article filenames: slugified article title
+- [x] Articles inherit entry tags in front matter
+- [x] Folder collision: append entry ID suffix
+- [x] Core Export — Single entry → folder with article .md files + front matter
+- [x] Front Matter Generation — YAML with title, tags, aliases, dates, kb_id
+- [x] CLI Command — `kb export [--entry <id>] --output <dir>`
+- [x] Conflict Detection — Scan output dir, parse front matter, collect existing kb_ids
+- [x] Interactive Overwrite — Prompt user for each conflicting entry
+- [x] Batch Export — Export all entries with `--all` flag
+- [x] Filename Sanitization — Slugify titles for folder/file names
+- [x] Flat Directory Layout — `output/{entry-title}/{article-1}.md`
+
+---
+
+## Export Spec (v1)
+
+### Directory Structure
+
+```
+output/
+├── my-knowledge-note.md           # Entry file (first article)
+├── my-knowledge-note/             # Folder for additional articles
+│   ├── article-two-title.md
+│   └── another-article-title.md
+└── another-note.md                # Single article entry
+```
+
+### Front Matter Template
+
+Entry files:
+```yaml
+---
+title: "Entry Title"
+kb_id: "2f018d"
+aliases:
+  - "Entry Title"
+tags:
+  - tag1
+  - tag2
+created: 2024-01-15
+updated: 2024-01-16
+kb_source: kb
+---
+
+# Entry Title
+
+Article content...
+```
+
+Article files (inherit entry tags):
+```yaml
+---
+title: "Article 2 Title"
+kb_id: "2f018d-a1b2c3"
+parent_id: "2f018d"
+tags:
+  - tag1
+  - tag2
+created: 2024-01-15
+kb_source: kb
+---
+
+# Article 2 Title
+
+Article content...
+```
+
+### Folder Slug Collision
+
+When two entries share the same title, append entry ID:
+```
+my-note/
+my-note-2f018d/   # collision resolved
+```
+
+### Conflict Detection Flow
+
+1. Scan `--output` directory recursively for `*.md` files
+2. Parse front matter from each file, extract `kb_id`
+3. Collect `kb_id` → file path mapping
+4. For each entry to export:
+   - If `kb_id` exists in mapping and `--force` not set → prompt user
+   - Show: `Found existing: kb_id "2f018d" → my-note/my-note.md`
+   - Options: [Y]es, [N]o, [A]ll, [Q]uit
+
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `--output, -o` | Output directory (required) |
+| `--entry` | Export single entry by ID |
+| `--all` | Export all entries |
+| `--force` | Skip overwrite confirmation prompt |
+| `--dry-run` | Preview without writing |

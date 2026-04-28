@@ -25,6 +25,7 @@ func (c *Commands) Run(ctx context.Context, args []string) error {
 			c.stats(),
 			c.config(),
 			c.download(),
+			c.export(),
 		},
 	}
 	return cmd.Run(ctx, args)
