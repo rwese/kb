@@ -16,15 +16,12 @@ func (c *Commands) Run(ctx context.Context, args []string) error {
 			c.setup(),
 			c.status(),
 			c.init(),
-			c.add(),
-			c.append(),
-			c.list(),
-			c.get(),
+			c.config(),
 			c.search(),
 			c.stats(),
-			c.config(),
 			c.download(),
 			c.export(),
+			c.entryCmd(),
 		},
 	}
 	return cmd.Run(ctx, args)

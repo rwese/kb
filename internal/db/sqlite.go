@@ -243,6 +243,14 @@ func (d *DB) UpdateEntryTime(id string) error {
 	return err
 }
 
+func (d *DB) UpdateEntry(id, title, tags string) error {
+	_, err := d.conn.Exec(
+		"UPDATE entries SET title = ?, tags = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+		title, tags, id,
+	)
+	return err
+}
+
 // Article operations
 
 func (d *DB) AddArticle(id, entryID, title, content string) error {
@@ -311,6 +319,21 @@ func (d *DB) GetArticleWithDeleted(id string, includeDeleted bool) (*Article, er
 		return nil, err
 	}
 	return &a, nil
+}
+
+func (d *DB) UpdateArticle(id, title, content string) error {
+	_, err := d.conn.Exec(
+		"UPDATE articles SET title = ?, content = ? WHERE id = ?",
+		title, content, id,
+	)
+	if err != nil {
+		return err
+	}
+
+	// Update entry timestamp
+	var entryID string
+	d.conn.QueryRow("SELECT entry_id FROM articles WHERE id = ?", id).Scan(&entryID)
+	return d.UpdateEntryTime(entryID)
 }
 
 func (d *DB) DeleteArticle(id string) error {

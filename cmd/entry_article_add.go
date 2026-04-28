@@ -13,11 +13,11 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-func (c *Commands) append() *cli.Command {
+func (c *Commands) entryArticleAdd() *cli.Command {
 	return &cli.Command{
-		Name:      "append",
-		Usage:     "Append article to entry",
-		ArgsUsage: "<entry> [content]",
+		Name:      "add",
+		Usage:     "Add article to entry",
+		ArgsUsage: "<entry-id> [content]",
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "title", Aliases: []string{"t"}, Usage: "Article title"},
 			&cli.StringFlag{Name: "file", Aliases: []string{"f"}, Usage: "Read content from file"},

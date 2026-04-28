@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/rwese/kb/internal/config"
@@ -10,15 +12,15 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-func (c *Commands) get() *cli.Command {
+func (c *Commands) entryGet() *cli.Command {
 	return &cli.Command{
 		Name:      "get",
-		Usage:     "Get entry or article",
+		Usage:     "Get entry by ID",
 		ArgsUsage: "<id>",
 		Flags: []cli.Flag{
 			&cli.BoolFlag{Name: "json", Usage: "Output as JSON"},
 			&cli.BoolFlag{Name: "all", Usage: "Include deleted entries"},
-			&cli.BoolFlag{Name: "articles", Aliases: []string{"a"}, Usage: "Include articles (for entries)"},
+			&cli.BoolFlag{Name: "articles", Aliases: []string{"a"}, Usage: "Include articles"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			cfg, err := config.Discover()
@@ -75,7 +77,7 @@ func printEntryWithArticles(entry *db.Entry, articles []db.Article, asJSON bool)
 			db.Entry
 			Articles []db.Article `json:"articles"`
 		}
-		return formatJSON(EntryJSON{Entry: *entry, Articles: articles})
+		return formatJSONCmd(EntryJSON{Entry: *entry, Articles: articles})
 	}
 
 	// Markdown document format
@@ -105,7 +107,7 @@ func printEntryWithArticles(entry *db.Entry, articles []db.Article, asJSON bool)
 
 func printEntry(entry *db.Entry, asJSON bool) error {
 	if asJSON {
-		return formatJSON(entry)
+		return formatJSONCmd(entry)
 	}
 
 	// Markdown document format - entry only
@@ -124,7 +126,7 @@ func printEntry(entry *db.Entry, asJSON bool) error {
 
 func printArticle(article *db.Article, asJSON bool) error {
 	if asJSON {
-		return formatJSON(article)
+		return formatJSONCmd(article)
 	}
 
 	// Markdown document format
@@ -139,4 +141,10 @@ func printArticle(article *db.Article, asJSON bool) error {
 	fmt.Printf("---\n\n%s\n", article.Content)
 
 	return nil
+}
+
+func formatJSONCmd(v interface{}) error {
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(v)
 }

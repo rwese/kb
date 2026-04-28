@@ -9,10 +9,10 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-func (c *Commands) list() *cli.Command {
+func (c *Commands) entryList() *cli.Command {
 	return &cli.Command{
 		Name:  "list",
-		Usage:   "List all entries and their articles",
+		Usage: "List all entries",
 		Flags: []cli.Flag{
 			&cli.BoolFlag{Name: "json", Usage: "Output as JSON"},
 			&cli.BoolFlag{Name: "articles", Usage: "Show article count per entry"},

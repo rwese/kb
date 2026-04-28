@@ -15,16 +15,17 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-func (c *Commands) add() *cli.Command {
+func (c *Commands) entryCreate() *cli.Command {
 	return &cli.Command{
-		Name:  "add",
-		Usage: "Add entry with initial article to knowledgebase",
+		Name:  "create",
+		Usage: "Create a new entry",
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "title", Aliases: []string{"t"}, Usage: "Entry title"},
-			&cli.StringFlag{Name: "content", Aliases: []string{"c"}, Usage: "Article content"},
+			&cli.StringFlag{Name: "content", Aliases: []string{"c"}, Usage: "Initial article content"},
 			&cli.StringFlag{Name: "file", Aliases: []string{"f"}, Usage: "Read content from file"},
 			&cli.StringFlag{Name: "tags", Usage: "Comma-separated tags"},
 			&cli.BoolFlag{Name: "stdin", Aliases: []string{"s"}, Usage: "Read content from stdin"},
+			&cli.BoolFlag{Name: "no-article", Usage: "Create entry without initial article"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			cfg, err := config.Discover()
@@ -53,24 +54,26 @@ func (c *Commands) add() *cli.Command {
 			// Get tags
 			tags = cmd.String("tags")
 
-			// Get content
-			if f := cmd.String("file"); f != "" {
-				data, err := os.ReadFile(f)
-				if err != nil {
-					return err
+			// Get content unless --no-article
+			if !cmd.Bool("no-article") {
+				if f := cmd.String("file"); f != "" {
+					data, err := os.ReadFile(f)
+					if err != nil {
+						return err
+					}
+					content = string(data)
+				} else if cmd.Bool("stdin") {
+					data, err := io.ReadAll(os.Stdin)
+					if err != nil {
+						return err
+					}
+					content = string(data)
+				} else if c := cmd.String("content"); c != "" {
+					content = c
+				} else {
+					fmt.Print("Article content (Ctrl+D to finish):\n")
+					content = readMultiline()
 				}
-				content = string(data)
-			} else if cmd.Bool("stdin") {
-				data, err := io.ReadAll(os.Stdin)
-				if err != nil {
-					return err
-				}
-				content = string(data)
-			} else if c := cmd.String("content"); c != "" {
-				content = c
-			} else {
-				fmt.Print("Article content (Ctrl+D to finish):\n")
-				content = readMultiline()
 			}
 
 			// Generate ID and create entry
@@ -79,7 +82,7 @@ func (c *Commands) add() *cli.Command {
 				return err
 			}
 
-			// Add initial article
+			// Add initial article if content provided
 			var articleID string
 			if content != "" {
 				articleID = id.Article(entryID)
@@ -94,8 +97,7 @@ func (c *Commands) add() *cli.Command {
 					if cfg.Embedder == "local" {
 						le, ok := e.(*embed.LocalEmbedder)
 						if ok && !le.IsAvailable() {
-							fmt.Printf("Warning: %s\n", le.ErrorMessage())
-							fmt.Printf("Added entry %s with article %s (no embedding)\n", entryID, articleID)
+							fmt.Printf("Created entry %s with article %s (no embedding)\n", entryID, articleID)
 							return nil
 						}
 					}
@@ -104,7 +106,7 @@ func (c *Commands) add() *cli.Command {
 					emb, err := e.Embed(ctx, content)
 					if err != nil {
 						fmt.Printf("Warning: failed to compute embedding: %v\n", err)
-						fmt.Printf("Added entry %s with article %s\n", entryID, articleID)
+						fmt.Printf("Created entry %s with article %s\n", entryID, articleID)
 						return nil
 					}
 
@@ -115,9 +117,9 @@ func (c *Commands) add() *cli.Command {
 					}
 				}
 
-				fmt.Printf("Added entry %s with article %s\n", entryID, articleID)
+				fmt.Printf("Created entry %s with article %s\n", entryID, articleID)
 			} else {
-				fmt.Printf("Added entry %s\n", entryID)
+				fmt.Printf("Created entry %s\n", entryID)
 			}
 
 			return nil
