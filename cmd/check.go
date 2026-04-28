@@ -11,10 +11,9 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-func (c *Commands) check() *cli.Command {
+func (c *Commands) status() *cli.Command {
 	return &cli.Command{
-		Name:    "check",
-		Aliases: []string{"doctor", "status"},
+		Name:  "status",
 		Usage:   "Validate kb installation and database",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			cfg, err := config.Discover()

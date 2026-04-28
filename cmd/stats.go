@@ -11,8 +11,7 @@ import (
 
 func (c *Commands) stats() *cli.Command {
 	return &cli.Command{
-		Name:    "stats",
-		Aliases: []string{"stat"},
+		Name:  "stats",
 		Usage:   "Show database statistics",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			cfg, err := config.Discover()

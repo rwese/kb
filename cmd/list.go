@@ -11,8 +11,7 @@ import (
 
 func (c *Commands) list() *cli.Command {
 	return &cli.Command{
-		Name:    "list",
-		Aliases: []string{"ls"},
+		Name:  "list",
 		Usage:   "List all entries and their articles",
 		Flags: []cli.Flag{
 			&cli.BoolFlag{Name: "json", Usage: "Output as JSON"},
