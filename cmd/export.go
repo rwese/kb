@@ -211,7 +211,7 @@ func generateArticleFile(entry *db.Entry, article *db.Article) (string, error) {
 }
 
 // ExportEntry exports a single entry to the output directory
-func ExportEntry(entry *db.Entry, articles []db.Article, outputDir string, dryRun bool) error {
+func ExportEntry(entry *db.Entry, articles []db.Article, outputDir string, dryRun bool) (string, error) {
 	slug := slugify(entry.Title)
 	entryDir := filepath.Join(outputDir, slug)
 
@@ -230,26 +230,27 @@ func ExportEntry(entry *db.Entry, articles []db.Article, outputDir string, dryRu
 			}
 			fmt.Printf("[DRY-RUN]   - %s\n", filepath.Join(entryDir, fname))
 		}
-		return nil
+		return entryDir, nil
 	}
 
 	// Create directory
 	if err := os.MkdirAll(entryDir, 0755); err != nil {
-		return fmt.Errorf("failed to create directory: %w", err)
+		return "", fmt.Errorf("failed to create directory: %w", err)
 	}
+
+	mainFile := filepath.Join(entryDir, "index.md")
 
 	// Export first article as the main entry file
 	// If entry has articles, use the first article's content for the main file
 	if len(articles) > 0 {
 		content, err := generateEntryFile(entry, &articles[0])
 		if err != nil {
-			return err
+			return "", err
 		}
 
 		// Main entry file uses entry title slug
-		mainFile := filepath.Join(entryDir, "index.md")
 		if err := os.WriteFile(mainFile, []byte(content), 0644); err != nil {
-			return fmt.Errorf("failed to write entry file: %w", err)
+			return "", fmt.Errorf("failed to write entry file: %w", err)
 		}
 
 		// Export remaining articles as separate files in the folder
@@ -257,7 +258,7 @@ func ExportEntry(entry *db.Entry, articles []db.Article, outputDir string, dryRu
 			article := &articles[i]
 			content, err := generateArticleFile(entry, article)
 			if err != nil {
-				return err
+				return "", err
 			}
 
 			fname := slugify(article.Title)
@@ -268,7 +269,7 @@ func ExportEntry(entry *db.Entry, articles []db.Article, outputDir string, dryRu
 
 			articleFile := filepath.Join(entryDir, fname)
 			if err := os.WriteFile(articleFile, []byte(content), 0644); err != nil {
-				return fmt.Errorf("failed to write article file: %w", err)
+				return "", fmt.Errorf("failed to write article file: %w", err)
 			}
 		}
 	} else {
@@ -284,13 +285,12 @@ func ExportEntry(entry *db.Entry, articles []db.Article, outputDir string, dryRu
 		content, _ := formatFrontMatter(fm)
 		content += fmt.Sprintf("# %s\n\n*No content*", entry.Title)
 
-		mainFile := filepath.Join(entryDir, "index.md")
 		if err := os.WriteFile(mainFile, []byte(content), 0644); err != nil {
-			return fmt.Errorf("failed to write entry file: %w", err)
+			return "", fmt.Errorf("failed to write entry file: %w", err)
 		}
 	}
 
-	return nil
+	return entryDir, nil
 }
 
 func (c *Commands) export() *cli.Command {
@@ -431,10 +431,11 @@ func (c *Commands) export() *cli.Command {
 				if dryRun {
 					fmt.Printf("[DRY-RUN] Export: %s (%s)\n", e.entry.Title, e.entry.ID)
 				} else {
-					if err := ExportEntry(e.entry, e.articles, outputDir, false); err != nil {
+					path, err := ExportEntry(e.entry, e.articles, outputDir, false)
+					if err != nil {
 						return fmt.Errorf("failed to export %s: %w", e.entry.ID, err)
 					}
-					fmt.Printf("Exported: %s (%s)\n", e.entry.Title, e.entry.ID)
+					fmt.Printf("Exported: %s (%s) → %s\n", e.entry.Title, e.entry.ID, path)
 				}
 			}
 
