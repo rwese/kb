@@ -1,3 +1,10 @@
 display_name: Knowledgebase
 short_description: Manage and query a personal knowledgebase with weighted retrieval
-default_prompt: Search the knowledgebase for information about "{query}" and summarize relevant findings.
+default_prompt: |
+  Search the knowledgebase for information about "{query}" and summarize relevant findings.
+
+  IMPORTANT: When adding to knowledgebase:
+  - Split large content into multiple articles per entry
+  - Each article should cover one concern/subject
+  - Use kb append for additional articles on the same topic
+  - Prefer many short articles over one long document
