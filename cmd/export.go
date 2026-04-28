@@ -211,86 +211,117 @@ func generateArticleFile(entry *db.Entry, article *db.Article) (string, error) {
 }
 
 // ExportEntry exports a single entry to the output directory
+// Layout:
+//   - Single article: output/entry-title.md
+//   - Multiple articles: output/entry-title/article-title.md
 func ExportEntry(entry *db.Entry, articles []db.Article, outputDir string, dryRun bool) (string, error) {
 	slug := slugify(entry.Title)
-	entryDir := filepath.Join(outputDir, slug)
 
-	// Check for collision and resolve
-	if _, err := os.Stat(entryDir); err == nil {
-		// Directory exists, check if it's a collision
-		entryDir = filepath.Join(outputDir, fmt.Sprintf("%s-%s", slug, entry.ID))
+	// Determine if we need a folder (multiple articles) or direct file (single article)
+	hasMultipleArticles := len(articles) > 1
+
+	var entryPath string
+	if hasMultipleArticles {
+		// Multiple articles: use folder layout
+		entryPath = filepath.Join(outputDir, slug)
+
+		// Check for collision and resolve
+		if _, err := os.Stat(entryPath); err == nil {
+			entryPath = filepath.Join(outputDir, fmt.Sprintf("%s-%s", slug, entry.ID))
+		}
+	} else {
+		// Single article: direct file at root
+		entryPath = filepath.Join(outputDir, slug+".md")
+
+		// Check for collision and resolve
+		if _, err := os.Stat(entryPath); err == nil {
+			entryPath = filepath.Join(outputDir, fmt.Sprintf("%s-%s.md", slug, entry.ID))
+		}
 	}
 
 	if dryRun {
-		fmt.Printf("[DRY-RUN] Would create: %s/\n", entryDir)
-		for _, a := range articles {
-			fname := slugify(a.Title) + ".md"
-			if a.Title == "" {
-				fname = "article-" + a.ID + ".md"
+		if hasMultipleArticles {
+			fmt.Printf("[DRY-RUN] Would create: %s/\n", entryPath)
+			for _, a := range articles {
+				fname := slugify(a.Title) + ".md"
+				if a.Title == "" {
+					fname = "article-" + a.ID + ".md"
+				}
+				fmt.Printf("[DRY-RUN]   - %s\n", filepath.Join(entryPath, fname))
 			}
-			fmt.Printf("[DRY-RUN]   - %s\n", filepath.Join(entryDir, fname))
+		} else {
+			fmt.Printf("[DRY-RUN] Would create: %s\n", entryPath)
 		}
-		return entryDir, nil
+		return entryPath, nil
 	}
 
-	// Create directory
-	if err := os.MkdirAll(entryDir, 0755); err != nil {
-		return "", fmt.Errorf("failed to create directory: %w", err)
-	}
+	if hasMultipleArticles {
+		// Create directory for multiple articles
+		if err := os.MkdirAll(entryPath, 0755); err != nil {
+			return "", fmt.Errorf("failed to create directory: %w", err)
+		}
 
-	mainFile := filepath.Join(entryDir, "index.md")
+		// Export first article as entry file in the folder
+		if len(articles) > 0 {
+			content, err := generateEntryFile(entry, &articles[0])
+			if err != nil {
+				return "", err
+			}
+			mainFile := filepath.Join(entryPath, slug+".md")
+			if err := os.WriteFile(mainFile, []byte(content), 0644); err != nil {
+				return "", fmt.Errorf("failed to write entry file: %w", err)
+			}
 
-	// Export first article as the main entry file
-	// If entry has articles, use the first article's content for the main file
-	if len(articles) > 0 {
-		content, err := generateEntryFile(entry, &articles[0])
+			// Export remaining articles as separate files
+			for i := 1; i < len(articles); i++ {
+				article := &articles[i]
+				content, err := generateArticleFile(entry, article)
+				if err != nil {
+					return "", err
+				}
+
+				fname := slugify(article.Title)
+				if fname == "" {
+					fname = "article-" + article.ID
+				}
+				fname += ".md"
+
+				articleFile := filepath.Join(entryPath, fname)
+				if err := os.WriteFile(articleFile, []byte(content), 0644); err != nil {
+					return "", fmt.Errorf("failed to write article file: %w", err)
+				}
+			}
+		}
+	} else {
+		// Single article or no articles: direct file
+		var content string
+		var err error
+
+		if len(articles) > 0 {
+			content, err = generateEntryFile(entry, &articles[0])
+		} else {
+			fm := FrontMatter{
+				Title:    entry.Title,
+				KbID:     entry.ID,
+				Tags:     parseTags(entry.Tags),
+				Created:  formatDate(entry.CreatedAt),
+				Updated:  formatDate(entry.UpdatedAt),
+				KbSource: "kb",
+			}
+			content, _ = formatFrontMatter(fm)
+			content += fmt.Sprintf("# %s\n\n*No content*", entry.Title)
+		}
+
 		if err != nil {
 			return "", err
 		}
 
-		// Main entry file uses entry title slug
-		if err := os.WriteFile(mainFile, []byte(content), 0644); err != nil {
-			return "", fmt.Errorf("failed to write entry file: %w", err)
-		}
-
-		// Export remaining articles as separate files in the folder
-		for i := 1; i < len(articles); i++ {
-			article := &articles[i]
-			content, err := generateArticleFile(entry, article)
-			if err != nil {
-				return "", err
-			}
-
-			fname := slugify(article.Title)
-			if fname == "" {
-				fname = "article-" + article.ID
-			}
-			fname += ".md"
-
-			articleFile := filepath.Join(entryDir, fname)
-			if err := os.WriteFile(articleFile, []byte(content), 0644); err != nil {
-				return "", fmt.Errorf("failed to write article file: %w", err)
-			}
-		}
-	} else {
-		// No articles, create a placeholder file
-		fm := FrontMatter{
-			Title:    entry.Title,
-			KbID:     entry.ID,
-			Tags:     parseTags(entry.Tags),
-			Created:  formatDate(entry.CreatedAt),
-			Updated:  formatDate(entry.UpdatedAt),
-			KbSource: "kb",
-		}
-		content, _ := formatFrontMatter(fm)
-		content += fmt.Sprintf("# %s\n\n*No content*", entry.Title)
-
-		if err := os.WriteFile(mainFile, []byte(content), 0644); err != nil {
+		if err := os.WriteFile(entryPath, []byte(content), 0644); err != nil {
 			return "", fmt.Errorf("failed to write entry file: %w", err)
 		}
 	}
 
-	return entryDir, nil
+	return entryPath, nil
 }
 
 func (c *Commands) export() *cli.Command {
