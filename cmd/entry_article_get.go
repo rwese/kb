@@ -29,6 +29,9 @@ func (c *Commands) entryArticleGet() *cli.Command {
 				return err
 			}
 			defer database.Close()
+			if err := database.Init(); err != nil {
+				return err
+			}
 
 			args := cmd.Args()
 			if args.Len() < 2 {
@@ -54,7 +57,11 @@ func (c *Commands) entryArticleGet() *cli.Command {
 				return fmt.Errorf("article %s does not belong to entry %s", articleID, entryID)
 			}
 
-			return printArticle(article, cmd.Bool("json"))
+			view, err := loadArticleView(database, article)
+			if err != nil {
+				return err
+			}
+			return printArticle(view, cmd.Bool("json"))
 		},
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	assetstore "github.com/rwese/kb/internal/assets"
 	"github.com/rwese/kb/internal/config"
 	"github.com/rwese/kb/internal/db"
 	"github.com/urfave/cli/v3"
@@ -168,8 +169,45 @@ func formatDate(timestamp string) string {
 	return t.Format("2006-01-02")
 }
 
+func resolveExportEntryPath(outputDir, slug, entryID string) string {
+	entryPath := filepath.Join(outputDir, slug)
+	info, err := os.Stat(entryPath)
+	if err != nil {
+		return entryPath
+	}
+	if !info.IsDir() {
+		return filepath.Join(outputDir, fmt.Sprintf("%s-%s", slug, entryID))
+	}
+
+	mainFile := filepath.Join(entryPath, slug+".md")
+	content, err := os.ReadFile(mainFile)
+	if err != nil {
+		return entryPath
+	}
+	kbID, err := parseFrontMatter(content)
+	if err != nil || kbID == "" || kbID == entryID {
+		return entryPath
+	}
+	return filepath.Join(outputDir, fmt.Sprintf("%s-%s", slug, entryID))
+}
+
 // generateEntryFile creates the main entry file content
-func generateEntryFile(entry *db.Entry, article *db.Article) (string, error) {
+func appendAssetLinks(content string, articleID string, assetList []db.ArticleAsset) string {
+	if len(assetList) == 0 {
+		return content
+	}
+
+	var b strings.Builder
+	b.WriteString(content)
+	b.WriteString("\n\n## Assets\n\n")
+	for _, asset := range assetList {
+		link := assetstore.AssetLinkPath(articleID, asset.LogicalPath)
+		fmt.Fprintf(&b, "- [%s](%s)\n", asset.LogicalPath, link)
+	}
+	return b.String()
+}
+
+func generateEntryFile(entry *db.Entry, article articleView) (string, error) {
 	fm := FrontMatter{
 		Title:    entry.Title,
 		KbID:     entry.ID,
@@ -186,11 +224,11 @@ func generateEntryFile(entry *db.Entry, article *db.Article) (string, error) {
 
 	// Entry file content: heading + article content
 	content := fmt.Sprintf("# %s\n\n%s", entry.Title, article.Content)
-	return frontMatter + content, nil
+	return frontMatter + appendAssetLinks(content, article.ID, article.Assets), nil
 }
 
 // generateArticleFile creates an article file content
-func generateArticleFile(entry *db.Entry, article *db.Article) (string, error) {
+func generateArticleFile(entry *db.Entry, article articleView) (string, error) {
 	fm := FrontMatter{
 		Title:    article.Title,
 		KbID:     article.ID,
@@ -207,117 +245,86 @@ func generateArticleFile(entry *db.Entry, article *db.Article) (string, error) {
 
 	// Article file content: heading + article content
 	content := fmt.Sprintf("# %s\n\n%s", article.Title, article.Content)
-	return frontMatter + content, nil
+	return frontMatter + appendAssetLinks(content, article.ID, article.Assets), nil
 }
 
-// ExportEntry exports a single entry to the output directory
-// Layout:
-//   - Single article: output/entry-title.md
-//   - Multiple articles: output/entry-title/article-title.md
-func ExportEntry(entry *db.Entry, articles []db.Article, outputDir string, dryRun bool) (string, error) {
+func ExportEntry(entry *db.Entry, articles []articleView, outputDir, assetsRoot string, dryRun bool) (string, error) {
 	slug := slugify(entry.Title)
-
-	// Determine if we need a folder (multiple articles) or direct file (single article)
-	hasMultipleArticles := len(articles) > 1
-
-	var entryPath string
-	if hasMultipleArticles {
-		// Multiple articles: use folder layout
-		entryPath = filepath.Join(outputDir, slug)
-
-		// Check for collision and resolve
-		if _, err := os.Stat(entryPath); err == nil {
-			entryPath = filepath.Join(outputDir, fmt.Sprintf("%s-%s", slug, entry.ID))
-		}
-	} else {
-		// Single article: direct file at root
-		entryPath = filepath.Join(outputDir, slug+".md")
-
-		// Check for collision and resolve
-		if _, err := os.Stat(entryPath); err == nil {
-			entryPath = filepath.Join(outputDir, fmt.Sprintf("%s-%s.md", slug, entry.ID))
-		}
+	if slug == "" {
+		slug = entry.ID
 	}
+	entryPath := resolveExportEntryPath(outputDir, slug, entry.ID)
 
 	if dryRun {
-		if hasMultipleArticles {
-			fmt.Printf("[DRY-RUN] Would create: %s/\n", entryPath)
-			for _, a := range articles {
-				fname := slugify(a.Title) + ".md"
-				if a.Title == "" {
-					fname = "article-" + a.ID + ".md"
-				}
-				fmt.Printf("[DRY-RUN]   - %s\n", filepath.Join(entryPath, fname))
+		fmt.Printf("[DRY-RUN] Would create: %s/\n", entryPath)
+		mainFile := filepath.Join(entryPath, slug+".md")
+		fmt.Printf("[DRY-RUN]   - %s\n", mainFile)
+		for i := 1; i < len(articles); i++ {
+			a := articles[i]
+			fname := slugify(a.Title)
+			if fname == "" {
+				fname = "article-" + a.ID
 			}
-		} else {
-			fmt.Printf("[DRY-RUN] Would create: %s\n", entryPath)
+			fmt.Printf("[DRY-RUN]   - %s\n", filepath.Join(entryPath, fname+".md"))
+		}
+		for _, article := range articles {
+			for _, asset := range article.Assets {
+				fmt.Printf("[DRY-RUN]   - %s\n", filepath.Join(entryPath, "assets", asset.ArticleID, filepath.FromSlash(asset.LogicalPath)))
+			}
 		}
 		return entryPath, nil
 	}
 
-	if hasMultipleArticles {
-		// Create directory for multiple articles
-		if err := os.MkdirAll(entryPath, 0755); err != nil {
-			return "", fmt.Errorf("failed to create directory: %w", err)
-		}
+	if err := os.MkdirAll(entryPath, 0755); err != nil {
+		return "", fmt.Errorf("failed to create directory: %w", err)
+	}
 
-		// Export first article as entry file in the folder
-		if len(articles) > 0 {
-			content, err := generateEntryFile(entry, &articles[0])
-			if err != nil {
-				return "", err
-			}
-			mainFile := filepath.Join(entryPath, slug+".md")
-			if err := os.WriteFile(mainFile, []byte(content), 0644); err != nil {
-				return "", fmt.Errorf("failed to write entry file: %w", err)
-			}
-
-			// Export remaining articles as separate files
-			for i := 1; i < len(articles); i++ {
-				article := &articles[i]
-				content, err := generateArticleFile(entry, article)
-				if err != nil {
-					return "", err
-				}
-
-				fname := slugify(article.Title)
-				if fname == "" {
-					fname = "article-" + article.ID
-				}
-				fname += ".md"
-
-				articleFile := filepath.Join(entryPath, fname)
-				if err := os.WriteFile(articleFile, []byte(content), 0644); err != nil {
-					return "", fmt.Errorf("failed to write article file: %w", err)
-				}
-			}
-		}
+	var content string
+	var err error
+	if len(articles) > 0 {
+		content, err = generateEntryFile(entry, articles[0])
 	} else {
-		// Single article or no articles: direct file
-		var content string
-		var err error
-
-		if len(articles) > 0 {
-			content, err = generateEntryFile(entry, &articles[0])
-		} else {
-			fm := FrontMatter{
-				Title:    entry.Title,
-				KbID:     entry.ID,
-				Tags:     parseTags(entry.Tags),
-				Created:  formatDate(entry.CreatedAt),
-				Updated:  formatDate(entry.UpdatedAt),
-				KbSource: "kb",
-			}
-			content, _ = formatFrontMatter(fm)
-			content += fmt.Sprintf("# %s\n\n*No content*", entry.Title)
+		fm := FrontMatter{
+			Title:    entry.Title,
+			KbID:     entry.ID,
+			Tags:     parseTags(entry.Tags),
+			Created:  formatDate(entry.CreatedAt),
+			Updated:  formatDate(entry.UpdatedAt),
+			KbSource: "kb",
 		}
+		content, _ = formatFrontMatter(fm)
+		content += fmt.Sprintf("# %s\n\n*No content*", entry.Title)
+	}
+	if err != nil {
+		return "", err
+	}
+	mainFile := filepath.Join(entryPath, slug+".md")
+	if err := os.WriteFile(mainFile, []byte(content), 0644); err != nil {
+		return "", fmt.Errorf("failed to write entry file: %w", err)
+	}
 
+	for i := 1; i < len(articles); i++ {
+		article := articles[i]
+		content, err := generateArticleFile(entry, article)
 		if err != nil {
 			return "", err
 		}
 
-		if err := os.WriteFile(entryPath, []byte(content), 0644); err != nil {
-			return "", fmt.Errorf("failed to write entry file: %w", err)
+		fname := slugify(article.Title)
+		if fname == "" {
+			fname = "article-" + article.ID
+		}
+		articleFile := filepath.Join(entryPath, fname+".md")
+		if err := os.WriteFile(articleFile, []byte(content), 0644); err != nil {
+			return "", fmt.Errorf("failed to write article file: %w", err)
+		}
+	}
+
+	for _, article := range articles {
+		for _, asset := range article.Assets {
+			if err := assetstore.ExportAssetFile(assetsRoot, entryPath, asset); err != nil {
+				return "", fmt.Errorf("failed to export asset %s: %w", asset.ID, err)
+			}
 		}
 	}
 
@@ -364,6 +371,9 @@ func (c *Commands) export() *cli.Command {
 				return err
 			}
 			defer database.Close()
+			if err := database.Init(); err != nil {
+				return err
+			}
 
 			outputDir := cmd.String("output")
 			entryID := cmd.String("entry")
@@ -397,7 +407,7 @@ func (c *Commands) export() *cli.Command {
 			// Collect entries to export
 			var entries []struct {
 				entry    *db.Entry
-				articles []db.Article
+				articles []articleView
 			}
 
 			if entryID != "" {
@@ -410,10 +420,14 @@ func (c *Commands) export() *cli.Command {
 				if err != nil {
 					return err
 				}
+				views, err := loadArticleViews(database, articles)
+				if err != nil {
+					return err
+				}
 				entries = append(entries, struct {
 					entry    *db.Entry
-					articles []db.Article
-				}{entry: entry, articles: articles})
+					articles []articleView
+				}{entry: entry, articles: views})
 			} else {
 				// All entries
 				allEntries, err := database.ListEntries()
@@ -425,10 +439,14 @@ func (c *Commands) export() *cli.Command {
 					if err != nil {
 						return err
 					}
+					views, err := loadArticleViews(database, articles)
+					if err != nil {
+						return err
+					}
 					entries = append(entries, struct {
 						entry    *db.Entry
-						articles []db.Article
-					}{entry: &e, articles: articles})
+						articles []articleView
+					}{entry: &e, articles: views})
 				}
 			}
 
@@ -461,8 +479,11 @@ func (c *Commands) export() *cli.Command {
 				// Export the entry
 				if dryRun {
 					fmt.Printf("[DRY-RUN] Export: %s (%s)\n", e.entry.Title, e.entry.ID)
+					if _, err := ExportEntry(e.entry, e.articles, outputDir, cfg.AssetsPath, true); err != nil {
+						return err
+					}
 				} else {
-					path, err := ExportEntry(e.entry, e.articles, outputDir, false)
+					path, err := ExportEntry(e.entry, e.articles, outputDir, cfg.AssetsPath, false)
 					if err != nil {
 						return fmt.Errorf("failed to export %s: %w", e.entry.ID, err)
 					}

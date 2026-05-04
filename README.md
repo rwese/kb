@@ -33,10 +33,13 @@ cd kb
 kb init
 
 # Create entry with article
-kb add -t "List flickering bug" -c "Initial report: items flicker when scrolling" --tags "ui,bug"
+kb entry create -t "List flickering bug" -c "Initial report: items flicker when scrolling" --tags "ui,bug"
 
 # Append more info
-kb append --entry 1 -c "Fix: add requestAnimationFrame throttling"
+kb entry article add 2f018d "Fix: add requestAnimationFrame throttling"
+
+# Attach a file or directory to an article
+kb entry article asset add 2f018d 2f018d-273b00 ./trace.har ./screenshots
 
 # Search
 kb search "flickering"
@@ -48,6 +51,7 @@ Create `~/.config/kb/config.yaml`:
 
 ```yaml
 db_path: ~/.local/share/kb/knowledgebase.db
+assets_path: ~/.local/share/kb/assets
 embedder: none  # or "ollama" for semantic search
 ollama:
   model: nomic-embed-text
@@ -60,44 +64,58 @@ top_k: 5
 | Command | Description |
 |---------|-------------|
 | `kb init` | Initialize database |
-| `kb add` | Create entry with initial article |
-| `kb append` | Add article to existing entry |
-| `kb list` | List all entries |
-| `kb get` | Get entry with articles |
+| `kb entry create` | Create entry with optional initial article |
+| `kb entry article add` | Add article to existing entry |
+| `kb entry article asset add` | Attach files or directories to an article |
+| `kb entry list` | List all entries |
+| `kb entry get --articles` | Get an entry with articles and assets |
+| `kb delete entry` | Delete one or more entries |
 | `kb search` | Search articles |
-| `kb delete` | Delete entry or article |
+| `kb export` | Export markdown plus KB-owned asset copies |
 | `kb config` | Show config |
 
 ## Data Model
 
 ```
-Entry (topic)          → kb add
+Entry (topic)          → kb entry create
 └── Article 1          → initial content
-└── Article 2          → kb append
-└── Article 3          → kb append
+└── Article 2          → kb entry article add
+└── Article 3          → kb entry article add
+    └── Asset files    → kb entry article asset add
 ```
 
 ## Examples
 
 ### Append by Entry ID
 ```bash
-kb append --entry 1 -c "More notes..."
+kb entry article add 2f018d "More notes..."
 ```
 
-### Append by Entry Title (creates if not exists)
+### Create and Inspect
 ```bash
-kb append --entry-title "Bug: List Flickering" -c "Found workaround..."
+kb entry create -t "Bug: List Flickering" -c "Found workaround..."
+kb entry get 2f018d --articles
 ```
 
-### From File or Stdin
+### Attach Assets
 ```bash
-cat session.log | kb append --entry 1
-kb add -f notes.md --tags "docs"
+kb entry article asset add 2f018d 2f018d-273b00 ./report.pdf
+kb entry article asset add 2f018d 2f018d-273b00 ./docs --overwrite
+kb entry article asset list 2f018d 2f018d-273b00
 ```
 
-### Search with Context
+### Export
 ```bash
-kb search --context-file debug.log -p "what causes the flickering"
+kb export -o out -e 2f018d
+
+# Produces:
+# out/http-cache-bug/http-cache-bug.md
+# out/http-cache-bug/assets/2f018d-273b00/trace.har
+```
+
+### Delete Entries
+```bash
+kb delete entry 2f018d a1b2c3 --force
 ```
 
 ## Weighted Retrieval
@@ -118,4 +136,7 @@ brew install sqlite3
 
 # Or manually
 CGO_CFLAGS="-DSQLITE_ENABLE_FTS5" go build -tags sqlite_fts5 -o kb .
+
+# Test
+CGO_CFLAGS="-DSQLITE_ENABLE_FTS5" go test ./...
 ```

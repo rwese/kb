@@ -9,11 +9,12 @@ import (
 )
 
 type Config struct {
-	DBPath   string        `yaml:"db_path"`
-	Embedder string        `yaml:"embedder"`
-	Ollama   OllamaConfig  `yaml:"ollama"`
-	Local    LocalConfig   `yaml:"local"`
-	TopK     int           `yaml:"top_k"`
+	DBPath     string       `yaml:"db_path"`
+	AssetsPath string       `yaml:"assets_path"`
+	Embedder   string       `yaml:"embedder"`
+	Ollama     OllamaConfig `yaml:"ollama"`
+	Local      LocalConfig  `yaml:"local"`
+	TopK       int          `yaml:"top_k"`
 }
 
 type OllamaConfig struct {
@@ -22,10 +23,10 @@ type OllamaConfig struct {
 }
 
 type LocalConfig struct {
-	Model           string  `yaml:"model"`
-	CacheDir        string  `yaml:"cache_dir"`
-	BM25Weight      float64 `yaml:"bm25_weight"`
-	SemanticWeight  float64 `yaml:"semantic_weight"`
+	Model          string  `yaml:"model"`
+	CacheDir       string  `yaml:"cache_dir"`
+	BM25Weight     float64 `yaml:"bm25_weight"`
+	SemanticWeight float64 `yaml:"semantic_weight"`
 }
 
 func Discover() (*Config, error) {
@@ -46,11 +47,15 @@ func Discover() (*Config, error) {
 				if cfg.DBPath == "" {
 					cfg.DBPath = filepath.Join(os.Getenv("HOME"), ".local", "share", "kb", "knowledgebase.db")
 				}
+				cfg.DBPath = expandTilde(cfg.DBPath)
+				if cfg.AssetsPath == "" {
+					cfg.AssetsPath = filepath.Join(filepath.Dir(cfg.DBPath), "assets")
+				}
 				if cfg.TopK == 0 {
 					cfg.TopK = 5
 				}
 				// Expand ~ in paths
-				cfg.DBPath = expandTilde(cfg.DBPath)
+				cfg.AssetsPath = expandTilde(cfg.AssetsPath)
 				cfg.Local.CacheDir = expandTilde(cfg.Local.CacheDir)
 				return &cfg, nil
 			}
@@ -59,14 +64,15 @@ func Discover() (*Config, error) {
 
 	// Default config
 	return &Config{
-		DBPath:   filepath.Join(os.Getenv("HOME"), ".local", "share", "kb", "knowledgebase.db"),
-		Embedder: "none",
-		TopK:     5,
+		DBPath:     filepath.Join(os.Getenv("HOME"), ".local", "share", "kb", "knowledgebase.db"),
+		AssetsPath: filepath.Join(os.Getenv("HOME"), ".local", "share", "kb", "assets"),
+		Embedder:   "none",
+		TopK:       5,
 		Local: LocalConfig{
-			Model:           "all-MiniLM-L6-v2-Q4_K_M",
-			CacheDir:        filepath.Join(os.Getenv("HOME"), ".cache", "kb"),
-			BM25Weight:      0.3,
-			SemanticWeight:  0.7,
+			Model:          "all-MiniLM-L6-v2-Q4_K_M",
+			CacheDir:       filepath.Join(os.Getenv("HOME"), ".cache", "kb"),
+			BM25Weight:     0.3,
+			SemanticWeight: 0.7,
 		},
 	}, nil
 }

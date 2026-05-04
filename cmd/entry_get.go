@@ -33,6 +33,9 @@ func (c *Commands) entryGet() *cli.Command {
 				return err
 			}
 			defer database.Close()
+			if err := database.Init(); err != nil {
+				return err
+			}
 
 			id := cmd.Args().First()
 			if id == "" {
@@ -48,7 +51,11 @@ func (c *Commands) entryGet() *cli.Command {
 				if err != nil {
 					return fmt.Errorf("article not found: %w", err)
 				}
-				return printArticle(article, asJSON)
+				view, err := loadArticleView(database, article)
+				if err != nil {
+					return err
+				}
+				return printArticle(view, asJSON)
 			}
 
 			// Entry ID
@@ -63,7 +70,11 @@ func (c *Commands) entryGet() *cli.Command {
 				if err != nil {
 					return err
 				}
-				return printEntryWithArticles(entry, articles, asJSON)
+				views, err := loadArticleViews(database, articles)
+				if err != nil {
+					return err
+				}
+				return printEntryWithArticles(entry, views, asJSON)
 			}
 
 			return printEntry(entry, asJSON)
@@ -71,13 +82,9 @@ func (c *Commands) entryGet() *cli.Command {
 	}
 }
 
-func printEntryWithArticles(entry *db.Entry, articles []db.Article, asJSON bool) error {
+func printEntryWithArticles(entry *db.Entry, articles []articleView, asJSON bool) error {
 	if asJSON {
-		type EntryJSON struct {
-			db.Entry
-			Articles []db.Article `json:"articles"`
-		}
-		return formatJSONCmd(EntryJSON{Entry: *entry, Articles: articles})
+		return formatJSONCmd(entryWithArticleViews{Entry: *entry, Articles: articles})
 	}
 
 	// Markdown document format
@@ -100,6 +107,7 @@ func printEntryWithArticles(entry *db.Entry, articles []db.Article, asJSON bool)
 		fmt.Printf("## Metadata\n\n")
 		fmt.Printf("- Added: %s\n\n", a.CreatedAt)
 		fmt.Printf("---\n\n%s\n\n", a.Content)
+		printAssetsSection(a.Assets)
 	}
 
 	return nil
@@ -124,7 +132,7 @@ func printEntry(entry *db.Entry, asJSON bool) error {
 	return nil
 }
 
-func printArticle(article *db.Article, asJSON bool) error {
+func printArticle(article articleView, asJSON bool) error {
 	if asJSON {
 		return formatJSONCmd(article)
 	}
@@ -138,7 +146,8 @@ func printArticle(article *db.Article, asJSON bool) error {
 	fmt.Printf("## Metadata\n\n")
 	fmt.Printf("- Entry: %s\n", article.EntryID)
 	fmt.Printf("- Added: %s\n\n", article.CreatedAt)
-	fmt.Printf("---\n\n%s\n", article.Content)
+	fmt.Printf("---\n\n%s\n\n", article.Content)
+	printAssetsSection(article.Assets)
 
 	return nil
 }

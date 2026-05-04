@@ -14,7 +14,7 @@ import (
 func (c *Commands) status() *cli.Command {
 	return &cli.Command{
 		Name:  "status",
-		Usage:   "Validate kb installation and database",
+		Usage: "Validate kb installation and database",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			cfg, err := config.Discover()
 			if err != nil {
@@ -26,6 +26,7 @@ func (c *Commands) status() *cli.Command {
 
 			// Check config
 			fmt.Printf("Config path:   %s\n", cfg.DBPath)
+			fmt.Printf("Asset path:    %s\n", cfg.AssetsPath)
 			fmt.Printf("Embedder:      %s\n", cfg.Embedder)
 			fmt.Printf("Top K:         %d\n", cfg.TopK)
 
@@ -44,6 +45,10 @@ func (c *Commands) status() *cli.Command {
 					errors++
 				} else {
 					defer database.Close()
+					if err := database.Init(); err != nil {
+						fmt.Println("✗ Failed to initialize schema:", err)
+						errors++
+					}
 
 					// Check tables
 					entryCount, err := database.Count()
@@ -60,6 +65,14 @@ func (c *Commands) status() *cli.Command {
 						errors++
 					} else {
 						fmt.Printf("✓ Articles table: %d articles\n", articleCount)
+					}
+
+					assetCount, err := database.AssetCount()
+					if err != nil {
+						fmt.Println("✗ Failed to query assets:", err)
+						errors++
+					} else {
+						fmt.Printf("✓ Assets table: %d assets\n", assetCount)
 					}
 
 					// Test search
@@ -80,6 +93,13 @@ func (c *Commands) status() *cli.Command {
 						fmt.Printf("✓ Vectors: %d indexed\n", vectorCount)
 					}
 				}
+			}
+
+			if err := os.MkdirAll(cfg.AssetsPath, 0755); err != nil {
+				fmt.Println("✗ Asset store unavailable:", err)
+				errors++
+			} else {
+				fmt.Println("✓ Asset store: OK")
 			}
 
 			// Check embedder status

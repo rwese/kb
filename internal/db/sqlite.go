@@ -30,6 +30,22 @@ type Article struct {
 	CreatedAt string `json:"created_at"`
 }
 
+type ArticleAsset struct {
+	ID           string `json:"id"`
+	ArticleID    string `json:"article_id"`
+	LogicalPath  string `json:"logical_path"`
+	OriginalPath string `json:"original_path"`
+	StoreRelPath string `json:"store_rel_path"`
+	SHA256       string `json:"sha256"`
+	SizeBytes    int64  `json:"size_bytes"`
+	CreatedAt    string `json:"created_at"`
+}
+
+type ArticleWithAssets struct {
+	Article
+	Assets []ArticleAsset `json:"assets"`
+}
+
 type EntryWithArticles struct {
 	Entry
 	Articles []Article `json:"articles"`
@@ -62,7 +78,7 @@ func Open(dbPath string) (*DB, error) {
 		return nil, err
 	}
 
-	conn, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_busy_timeout=5000")
+	conn, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_busy_timeout=5000&_foreign_keys=on")
 	if err != nil {
 		return nil, err
 	}
@@ -125,6 +141,19 @@ func (d *DB) Init() error {
 			FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_vectors_article ON vectors(article_id)`,
+		`CREATE TABLE IF NOT EXISTS article_assets (
+			id TEXT PRIMARY KEY,
+			article_id TEXT NOT NULL,
+			logical_path TEXT NOT NULL,
+			original_path TEXT NOT NULL,
+			store_rel_path TEXT NOT NULL UNIQUE,
+			sha256 TEXT NOT NULL,
+			size_bytes INTEGER NOT NULL,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE,
+			UNIQUE(article_id, logical_path)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_article_assets_article ON article_assets(article_id)`,
 	}
 
 	for _, q := range queries {
@@ -355,6 +384,139 @@ func (d *DB) DeleteEntry(id string) error {
 	return err
 }
 
+// Article asset operations
+
+func (d *DB) AddArticleAsset(asset ArticleAsset) error {
+	_, err := d.conn.Exec(`
+		INSERT INTO article_assets (
+			id, article_id, logical_path, original_path, store_rel_path, sha256, size_bytes
+		) VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, asset.ID, asset.ArticleID, asset.LogicalPath, asset.OriginalPath, asset.StoreRelPath, asset.SHA256, asset.SizeBytes)
+	return err
+}
+
+func (d *DB) SaveArticleAssets(entryID string, assets []ArticleAsset, overwriteIDs []string) error {
+	tx, err := d.conn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	for _, assetID := range overwriteIDs {
+		if _, err := tx.Exec("DELETE FROM article_assets WHERE id = ?", assetID); err != nil {
+			return err
+		}
+	}
+
+	for _, asset := range assets {
+		if _, err := tx.Exec(`
+			INSERT INTO article_assets (
+				id, article_id, logical_path, original_path, store_rel_path, sha256, size_bytes
+			) VALUES (?, ?, ?, ?, ?, ?, ?)
+		`, asset.ID, asset.ArticleID, asset.LogicalPath, asset.OriginalPath, asset.StoreRelPath, asset.SHA256, asset.SizeBytes); err != nil {
+			return err
+		}
+	}
+
+	if _, err := tx.Exec("UPDATE entries SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", entryID); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (d *DB) GetArticleAsset(articleID, assetID string) (*ArticleAsset, error) {
+	var asset ArticleAsset
+	err := d.conn.QueryRow(`
+		SELECT id, article_id, logical_path, original_path, store_rel_path, sha256, size_bytes, created_at
+		FROM article_assets
+		WHERE article_id = ? AND id = ?
+	`, articleID, assetID).Scan(
+		&asset.ID,
+		&asset.ArticleID,
+		&asset.LogicalPath,
+		&asset.OriginalPath,
+		&asset.StoreRelPath,
+		&asset.SHA256,
+		&asset.SizeBytes,
+		&asset.CreatedAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &asset, nil
+}
+
+func (d *DB) GetArticleAssetByLogicalPath(articleID, logicalPath string) (*ArticleAsset, error) {
+	var asset ArticleAsset
+	err := d.conn.QueryRow(`
+		SELECT id, article_id, logical_path, original_path, store_rel_path, sha256, size_bytes, created_at
+		FROM article_assets
+		WHERE article_id = ? AND logical_path = ?
+	`, articleID, logicalPath).Scan(
+		&asset.ID,
+		&asset.ArticleID,
+		&asset.LogicalPath,
+		&asset.OriginalPath,
+		&asset.StoreRelPath,
+		&asset.SHA256,
+		&asset.SizeBytes,
+		&asset.CreatedAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &asset, nil
+}
+
+func (d *DB) ListArticleAssets(articleID string) ([]ArticleAsset, error) {
+	rows, err := d.conn.Query(`
+		SELECT id, article_id, logical_path, original_path, store_rel_path, sha256, size_bytes, created_at
+		FROM article_assets
+		WHERE article_id = ?
+		ORDER BY logical_path
+	`, articleID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var assets []ArticleAsset
+	for rows.Next() {
+		var asset ArticleAsset
+		if err := rows.Scan(
+			&asset.ID,
+			&asset.ArticleID,
+			&asset.LogicalPath,
+			&asset.OriginalPath,
+			&asset.StoreRelPath,
+			&asset.SHA256,
+			&asset.SizeBytes,
+			&asset.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		assets = append(assets, asset)
+	}
+	return assets, rows.Err()
+}
+
+func (d *DB) DeleteArticleAsset(articleID, assetID string) error {
+	_, err := d.conn.Exec("DELETE FROM article_assets WHERE article_id = ? AND id = ?", articleID, assetID)
+	return err
+}
+
+func (d *DB) DeleteArticleAssetsByArticle(articleID string) error {
+	_, err := d.conn.Exec("DELETE FROM article_assets WHERE article_id = ?", articleID)
+	return err
+}
+
 // Search operations
 
 func (d *DB) Search(query string, topK int) ([]SearchResult, error) {
@@ -411,6 +573,12 @@ func (d *DB) Count() (int, error) {
 func (d *DB) ArticleCount() (int, error) {
 	var count int
 	err := d.conn.QueryRow("SELECT COUNT(*) FROM articles").Scan(&count)
+	return count, err
+}
+
+func (d *DB) AssetCount() (int, error) {
+	var count int
+	err := d.conn.QueryRow("SELECT COUNT(*) FROM article_assets").Scan(&count)
 	return count, err
 }
 
@@ -546,6 +714,7 @@ type Stats struct {
 	TotalArticles   int
 	ActiveArticles  int
 	DeletedArticles int
+	TotalAssets     int
 	TotalHistory    int
 	VectorCount     int
 }
@@ -557,6 +726,9 @@ func (d *DB) Stats() (*Stats, error) {
 		return nil, err
 	}
 	if err := d.conn.QueryRow("SELECT COUNT(*) FROM articles").Scan(&s.TotalArticles); err != nil {
+		return nil, err
+	}
+	if err := d.conn.QueryRow("SELECT COUNT(*) FROM article_assets").Scan(&s.TotalAssets); err != nil {
 		return nil, err
 	}
 

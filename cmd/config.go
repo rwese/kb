@@ -20,6 +20,7 @@ func (c *Commands) config() *cli.Command {
 			}
 
 			fmt.Printf("DB Path:   %s\n", cfg.DBPath)
+			fmt.Printf("Assets:    %s\n", cfg.AssetsPath)
 			fmt.Printf("Embedder:  %s\n", cfg.Embedder)
 			fmt.Printf("Top K:     %d\n", cfg.TopK)
 

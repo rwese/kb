@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	assetstore "github.com/rwese/kb/internal/assets"
 	"github.com/rwese/kb/internal/config"
 	"github.com/rwese/kb/internal/db"
 	"github.com/urfave/cli/v3"
@@ -43,15 +44,8 @@ func (c *Commands) entryArticleDelete() *cli.Command {
 				return fmt.Errorf("entry not found: %w", err)
 			}
 
-			// Get article to verify ownership
-			article, err := database.GetArticle(articleID)
-			if err != nil {
-				return fmt.Errorf("article not found: %w", err)
-			}
-
-			// Verify article belongs to entry
-			if article.EntryID != entryID {
-				return fmt.Errorf("article %s does not belong to entry %s", articleID, entryID)
+			if _, err := requireArticleOwnership(database, entryID, articleID); err != nil {
+				return err
 			}
 
 			// Confirm unless --force
@@ -71,6 +65,9 @@ func (c *Commands) entryArticleDelete() *cli.Command {
 			// Delete article
 			if err := database.DeleteArticle(articleID); err != nil {
 				return err
+			}
+			if err := assetstore.RemoveArticleTree(cfg.AssetsPath, articleID); err != nil {
+				return fmt.Errorf("article deleted but failed to remove asset store for %s: %w", articleID, err)
 			}
 
 			fmt.Printf("Deleted article %s from entry %s\n", articleID, entryID)

@@ -29,6 +29,9 @@ func (c *Commands) entryList() *cli.Command {
 				return err
 			}
 			defer database.Close()
+			if err := database.Init(); err != nil {
+				return err
+			}
 
 			entries, err := database.ListEntriesWithDeleted(cmd.Bool("all"))
 			if err != nil {
@@ -41,14 +44,14 @@ func (c *Commands) entryList() *cli.Command {
 			}
 
 			if cmd.Bool("json") {
-				type EntryJSON struct {
-					db.Entry
-					Articles []db.Article `json:"articles"`
-				}
-				var result []EntryJSON
+				var result []entryWithArticleViews
 				for _, e := range entries {
 					articles, _ := database.GetArticles(e.ID)
-					result = append(result, EntryJSON{Entry: e, Articles: articles})
+					views, err := loadArticleViews(database, articles)
+					if err != nil {
+						return err
+					}
+					result = append(result, entryWithArticleViews{Entry: e, Articles: views})
 				}
 				return formatJSON(result)
 			}
