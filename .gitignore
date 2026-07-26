@@ -1,3 +1,6 @@
+# Workspace-local task state
+/.workspace/tasks/
+
 # Binaries
 bin/
 *.exe

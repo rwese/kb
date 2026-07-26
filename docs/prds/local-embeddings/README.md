@@ -299,34 +299,18 @@ Vectors:      1,247 indexed ✓
 
 ## 5. Feature Roadmap
 
-### Phase 1: Core Infrastructure
+Phases 1 and 2 were implemented in commits `bf413f5` and `a5f19b1`. Phase 3 added `kb download`, embedder checks, and graceful fallback when local assets are unavailable.
 
-- [ ] Create `internal/embed/local.go` with llama.cpp interface
-- [ ] Create `internal/embed/download.go` with GitHub releases integration
-- [ ] Update `internal/config/discover.go` with local config
-- [ ] Create `scripts/build-llama.sh` for cross-platform compilation
-- [ ] Add SQLite vector table migration
+### Remaining Phase 3 Work
 
-### Phase 2: Integration
-
-- [ ] Update `kb add` to compute + store embeddings
-- [ ] Update `kb append` to compute + store embeddings
-- [ ] Update `kb delete` to remove vector entries
-- [ ] Implement hybrid search in `kb search`
-
-### Phase 3: Polish
-
-- [ ] Add `kb download` command
-- [ ] Enhance `kb check` with embedder status
-- [ ] Progress indicators for downloads
-- [ ] Graceful degradation on cache dir issues
+- [ ] `2026-07-26-CYGJGUEL-AUBUC` Validate download progress indicators against published release assets
 
 ### Phase 4: Release
 
-- [ ] CI/CD pipeline for multi-platform builds
-- [ ] GitHub Releases with asset upload
-- [ ] Documentation update
-- [ ] Version bump
+- [ ] `2026-07-26-CYGJGUET-AUBUC` Add a CI/CD pipeline for multi-platform builds
+- [ ] `2026-07-26-CYGJGUEX-AUBUC` Publish GitHub Releases with embedding assets
+- [ ] `2026-07-26-CYGJGUEZ-AUBUC` Update user documentation for local embeddings
+- [ ] `2026-07-26-CYGJGUFC-AUBUC` Bump the version for the local embeddings release
 
 **MVP Milestone:** Users can `kb add`, `kb search`, and get semantic results without Ollama.
 
@@ -356,19 +340,19 @@ Existing users:
 
 ## 7. Open Questions
 
-1. **Release hosting**: Where to host `libllama_go` binaries?
+1. **`2026-07-26-CYGJGUFE-AUBUC` — Release hosting**: Where to host `libllama_go` binaries?
    - Option A: KB's own GitHub Releases
    - Option B: Separate `kb-assets` repo
 
-2. **Model updates**: How to handle model version bumps?
+2. **`2026-07-26-CYGJGUFH-AUBUC` — Model updates**: How to handle model version bumps?
    - Option A: Freeze model, never update
    - Option B: Version in config, re-embed on change
 
-3. **Cache invalidation**: When to refresh downloaded assets?
+3. **`2026-07-26-CYGJGUFJ-AUBUC` — Cache invalidation**: When to refresh downloaded assets?
    - Option A: Never auto-update
    - Option B: Check version on startup, prompt if new
 
-4. **Build reproducibility**: Pin llama.cpp commit hash?
+4. **`2026-07-26-CYGJGUFL-AUBUC` — Build reproducibility**: Pin llama.cpp commit hash?
    - Ensures consistent builds
    - Prevents silent regressions
 
@@ -376,14 +360,14 @@ Existing users:
 
 ## 8. Success Criteria
 
-- [ ] `kb add -t "test" -c "content"` stores vector in DB
-- [ ] `kb search "content"` returns semantic matches
-- [ ] `kb` works on fresh macOS/Linux/Windows install
-- [ ] `kb check` reports green for local embedder
-- [ ] No Ollama installation required for embeddings
-- [ ] First-run download completes < 60s on broadband
-- [ ] Embedding computation < 100ms per article
-- [ ] Search returns relevant results within 500ms
+- [ ] `2026-07-26-CYNLJEHM-IJCWN` — `kb add -t "test" -c "content"` stores a vector in the database
+- [ ] `2026-07-26-CYNLJESV-IJCWN` — `kb search "content"` returns semantic matches
+- [ ] `2026-07-26-CYNLJETD-IJCWN` — `kb` works on a fresh macOS, Linux, or Windows installation
+- [ ] `2026-07-26-CYNLJETH-IJCWN` — `kb check` reports green for the local embedder
+- [ ] `2026-07-26-CYNLJETK-IJCWN` — Embeddings require no Ollama installation
+- [ ] `2026-07-26-CYNLJETN-IJCWN` — First-run download completes in under 60 seconds on broadband
+- [ ] `2026-07-26-CYNLJETQ-IJCWN` — Embedding computation completes in under 100 ms per article
+- [ ] `2026-07-26-CYNLJETS-IJCWN` — Search returns relevant results within 500 ms
 
 ---
 

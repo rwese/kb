@@ -1,38 +1,8 @@
+# Export Specification
+
 ## Goal
 
-Export kb knowledgebase entries to Obsidian-compatible markdown files with YAML front matter in a flat directory structure, where each entry is a folder containing separate article files.
-
-## Export — TODO
-
-### In Progress
-
-- [ ] ...
-
-### Ready
-
-- [ ] ... (all tasks completed)
-
-### Blocked
-
-- [ ] ...
-
-### Done
-
-- [x] Clarified requirements (flat dir, separate article files, title-based naming)
-- [x] Front matter `id` → `kb_id`; articles use article's kb_id
-- [x] Article filenames: slugified article title
-- [x] Articles inherit entry tags in front matter
-- [x] Folder collision: append entry ID suffix
-- [x] Core Export — Single entry → folder with article .md files + front matter
-- [x] Front Matter Generation — YAML with title, tags, aliases, dates, kb_id
-- [x] CLI Command — `kb export [--entry <id>] --output <dir>`
-- [x] Conflict Detection — Scan output dir, parse front matter, collect existing kb_ids
-- [x] Interactive Overwrite — Prompt user for each conflicting entry
-- [x] Batch Export — Export all entries with `--all` flag
-- [x] Filename Sanitization — Slugify titles for folder/file names
-- [x] Flat Directory Layout — `output/{entry-title}/{article-1}.md`
-
----
+Export kb knowledgebase entries to Obsidian-compatible Markdown files with YAML front matter in a flat directory structure. Each entry has a primary file and, when needed, a folder containing additional article files.
 
 ## Export Spec (v1)
 
