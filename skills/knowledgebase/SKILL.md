@@ -35,6 +35,8 @@ kb search --bm25-only "wrapper quoting"
 
 Use short FTS5-safe keywords. If a query fails with `fts5: syntax error near "?"`, remove punctuation or simplify it. Put the complete retrieval query in either the positional argument or `--prompt`; when both are present, `--prompt` wins.
 
+Search omits content by default. Pass `--content` for a per-entry excerpt or `--full-content` for uncut bodies; use `kb entry get <entry-id>` to read full text of a hit.
+
 Use `--format json` when parsing results. Use `--bm25-only` to diagnose semantic-ranking problems.
 
 ## Store

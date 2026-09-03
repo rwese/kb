@@ -26,6 +26,7 @@ func (c *Commands) search() *cli.Command {
 			&cli.StringFlag{Name: "format", Aliases: []string{"o"}, Usage: "Output format", DefaultText: "markdown"},
 			&cli.BoolFlag{Name: "all", Usage: "Include deleted entries"},
 			&cli.BoolFlag{Name: "bm25-only", Usage: "Use BM25-only search (skip semantic)"},
+			&cli.BoolFlag{Name: "content", Usage: "Include a content excerpt for the best-matching article of each entry"},
 			&cli.BoolFlag{Name: "full-content", Usage: "Show full result details (previous verbose format)"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -85,19 +86,12 @@ func (c *Commands) search() *cli.Command {
 				results = results[:topK]
 			}
 
-			return formatSearchResults(results, cmd.String("format"), cmd.Bool("bm25-only"), cmd.Bool("full-content"))
+			return formatSearchResults(results, cmd.String("format"), cmd.Bool("bm25-only"), cmd.Bool("content"), cmd.Bool("full-content"))
 		},
 	}
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func formatSearchResults(results []db.SearchResult, format string, bm25Only, fullContent bool) error {
+func formatSearchResults(results []db.SearchResult, format string, bm25Only, content, fullContent bool) error {
 	switch format {
 	case "json":
 		enc := json.NewEncoder(os.Stdout)
@@ -111,7 +105,7 @@ func formatSearchResults(results []db.SearchResult, format string, bm25Only, ful
 		if fullContent {
 			formatSearchResultsVerbose(results, bm25Only)
 		} else {
-			formatSearchResultsCompact(results)
+			formatSearchResultsCompact(results, content)
 		}
 	}
 	return nil
@@ -119,7 +113,7 @@ func formatSearchResults(results []db.SearchResult, format string, bm25Only, ful
 
 // formatSearchResultsCompact groups matches by entry: entry headline, the
 // matching articles, and a truncated content excerpt from the best match.
-func formatSearchResultsCompact(results []db.SearchResult) {
+func formatSearchResultsCompact(results []db.SearchResult, includeContent bool) {
 	type entryGroup struct {
 		entryID    string
 		entryTitle string
@@ -154,11 +148,13 @@ func formatSearchResultsCompact(results []db.SearchResult) {
 		for _, a := range g.articles {
 			fmt.Printf("Article-ID: %s, Title: %s\n", a.ID, a.Title)
 		}
-		fmt.Printf("\nEntry-Content:\n\n")
-		excerpt, truncated := truncateContent(g.articles[0].Content, 10)
-		fmt.Println(excerpt)
-		if truncated {
-			fmt.Printf("... output was truncated use `kb entry get %s` for full content.\n", g.entryID)
+		if includeContent {
+			fmt.Printf("\nEntry-Content:\n\n")
+			excerpt, truncated := truncateContent(g.articles[0].Content, 10)
+			fmt.Println(excerpt)
+			if truncated {
+				fmt.Printf("... output was truncated use `kb entry get %s` for full content.\n", g.entryID)
+			}
 		}
 		fmt.Println()
 	}

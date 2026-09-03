@@ -102,29 +102,36 @@ func TestSearchCompactFormat(t *testing.T) {
 	if strings.Contains(out, "### Result #") {
 		t.Fatalf("compact format must not use verbose headers:\n%s", out)
 	}
-
-	// Truncation: query a token only the 12-line article contains
-	out2 := runCmdCapture(t, c, "kb", "search", "beyond")
-	if !strings.Contains(out2, "Article-ID: abc123-111111, Title:") {
-		t.Fatalf("long article must be the only match, got:\n%s", out2)
+	// Default output carries no content
+	if strings.Contains(out, "Entry-Content:") {
+		t.Fatalf("default output must not include content:\n%s", out)
 	}
-	if !strings.Contains(out2, "l10") {
-		t.Fatalf("missing 10th line, got:\n%s", out2)
-	}
-	if strings.Contains(out2, "l11") {
-		t.Fatalf("11th line must be truncated:\n%s", out2)
-	}
-	if !strings.Contains(out2, "... output was truncated use `kb entry get abc123` for full content.") {
-		t.Fatalf("missing truncation hint, got:\n%s", out2)
+	if strings.Contains(out, "output was truncated") {
+		t.Fatalf("default output must not include truncation hint:\n%s", out)
 	}
 
-	// Short content is not truncated
-	out3 := runCmdCapture(t, c, "kb", "search", "hydration")
-	if !strings.Contains(out3, "ID: def456, Title: Hydration bug, Tags: react") {
-		t.Fatalf("missing second entry headline, got:\n%s", out3)
+	// Content is only shown when requested via --content
+	outContent := runCmdCapture(t, c, "kb", "search", "--content", "beyond")
+	if !strings.Contains(outContent, "Article-ID: abc123-111111, Title:") {
+		t.Fatalf("long article must be the only match, got:\n%s", outContent)
 	}
-	if strings.Contains(out3, "output was truncated") {
-		t.Fatalf("short content must not be truncated:\n%s", out3)
+	if !strings.Contains(outContent, "l10") {
+		t.Fatalf("missing 10th line, got:\n%s", outContent)
+	}
+	if strings.Contains(outContent, "l11") {
+		t.Fatalf("11th line must be truncated:\n%s", outContent)
+	}
+	if !strings.Contains(outContent, "... output was truncated use `kb entry get abc123` for full content.") {
+		t.Fatalf("missing truncation hint, got:\n%s", outContent)
+	}
+
+	// Short content is not truncated when shown
+	outShort := runCmdCapture(t, c, "kb", "search", "--content", "hydration")
+	if !strings.Contains(outShort, "ID: def456, Title: Hydration bug, Tags: react") {
+		t.Fatalf("missing second entry headline, got:\n%s", outShort)
+	}
+	if strings.Contains(outShort, "output was truncated") {
+		t.Fatalf("short content must not be truncated:\n%s", outShort)
 	}
 }
 
