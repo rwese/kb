@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"unsafe"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -51,6 +52,22 @@ type EntryWithArticles struct {
 	Articles []Article `json:"articles"`
 }
 
+// EntryAttachment is one titled regular file copied into kb-owned storage,
+// owned directly by an entry and parallel to an article.
+type EntryAttachment struct {
+	ID           string `json:"id"`
+	EntryID      string `json:"entry_id"`
+	Title        string `json:"title"`
+	FileName     string `json:"file_name"`
+	OriginalPath string `json:"original_path"`
+	StoreRelPath string `json:"store_rel_path"`
+	SHA256       string `json:"sha256"`
+	SizeBytes    int64  `json:"size_bytes"`
+	ModePerm     int64  `json:"mode_perm"`
+	CreatedAt    string `json:"created_at"`
+	UpdatedAt    string `json:"updated_at"`
+}
+
 type SearchResult struct {
 	Article
 	EntryID       string  `json:"entry_id"`
@@ -59,6 +76,16 @@ type SearchResult struct {
 	Score         float64 `json:"score"`
 	BM25Score     float64 `json:"bm25_score,omitempty"`
 	SemanticScore float64 `json:"semantic_score,omitempty"`
+	Type          string  `json:"type"`
+
+	// Attachment-specific fields (Type == "attachment")
+	FileName     string `json:"file_name,omitempty"`
+	OriginalPath string `json:"original_path,omitempty"`
+	StoreRelPath string `json:"store_rel_path,omitempty"`
+	SHA256       string `json:"sha256,omitempty"`
+	SizeBytes    int64  `json:"size_bytes,omitempty"`
+	ModePerm     int64  `json:"mode_perm,omitempty"`
+	UpdatedAt    string `json:"updated_at,omitempty"`
 }
 
 // Vector stores embedding vectors for articles
@@ -155,6 +182,44 @@ func (d *DB) Init() error {
 			UNIQUE(article_id, logical_path)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_article_assets_article ON article_assets(article_id)`,
+
+		// Entry attachments: one titled regular file per row, owned by the entry.
+		`CREATE TABLE IF NOT EXISTS entry_attachments (
+			id TEXT NOT NULL,
+			entry_id TEXT NOT NULL,
+			title TEXT NOT NULL,
+			file_name TEXT NOT NULL,
+			original_path TEXT NOT NULL,
+			store_rel_path TEXT NOT NULL UNIQUE,
+			sha256 TEXT NOT NULL,
+			size_bytes INTEGER NOT NULL,
+			mode_perm INTEGER NOT NULL,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (entry_id, id),
+			FOREIGN KEY (entry_id) REFERENCES entries(id) ON DELETE CASCADE
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_entry_attachments_entry ON entry_attachments(entry_id)`,
+		`CREATE VIRTUAL TABLE IF NOT EXISTS entry_attachments_fts USING fts5(
+			title, file_name,
+			content='entry_attachments',
+			content_rowid='id',
+			tokenize='porter unicode61'
+		)`,
+		`CREATE TRIGGER IF NOT EXISTS entry_attachments_ai AFTER INSERT ON entry_attachments BEGIN
+			INSERT INTO entry_attachments_fts(rowid, title, file_name)
+			VALUES (new.rowid, new.title, new.file_name);
+		END`,
+		`CREATE TRIGGER IF NOT EXISTS entry_attachments_ad AFTER DELETE ON entry_attachments BEGIN
+			INSERT INTO entry_attachments_fts(entry_attachments_fts, rowid, title, file_name)
+			VALUES ('delete', old.rowid, old.title, old.file_name);
+		END`,
+		`CREATE TRIGGER IF NOT EXISTS entry_attachments_au AFTER UPDATE ON entry_attachments BEGIN
+			INSERT INTO entry_attachments_fts(entry_attachments_fts, rowid, title, file_name)
+			VALUES ('delete', old.rowid, old.title, old.file_name);
+			INSERT INTO entry_attachments_fts(rowid, title, file_name)
+			VALUES (new.rowid, new.title, new.file_name);
+		END`,
 	}
 
 	for _, q := range queries {
@@ -524,6 +589,106 @@ func (d *DB) DeleteArticleAssetsByArticle(articleID string) error {
 	return err
 }
 
+// Entry attachment operations
+
+func (d *DB) AddEntryAttachment(att EntryAttachment) error {
+	_, err := d.conn.Exec(`
+		INSERT INTO entry_attachments (
+			id, entry_id, title, file_name, original_path, store_rel_path, sha256, size_bytes, mode_perm
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, att.ID, att.EntryID, att.Title, att.FileName, att.OriginalPath, att.StoreRelPath, att.SHA256, att.SizeBytes, att.ModePerm)
+	if err != nil {
+		return err
+	}
+	return d.UpdateEntryTime(att.EntryID)
+}
+
+func (d *DB) GetEntryAttachment(entryID, attachmentID string) (*EntryAttachment, error) {
+	var att EntryAttachment
+	err := d.conn.QueryRow(`
+		SELECT id, entry_id, title, file_name, original_path, store_rel_path, sha256, size_bytes, mode_perm, created_at, updated_at
+		FROM entry_attachments
+		WHERE entry_id = ? AND id = ?
+	`, entryID, attachmentID).Scan(
+		&att.ID,
+		&att.EntryID,
+		&att.Title,
+		&att.FileName,
+		&att.OriginalPath,
+		&att.StoreRelPath,
+		&att.SHA256,
+		&att.SizeBytes,
+		&att.ModePerm,
+		&att.CreatedAt,
+		&att.UpdatedAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &att, nil
+}
+
+func (d *DB) ListEntryAttachments(entryID string) ([]EntryAttachment, error) {
+	rows, err := d.conn.Query(`
+		SELECT id, entry_id, title, file_name, original_path, store_rel_path, sha256, size_bytes, mode_perm, created_at, updated_at
+		FROM entry_attachments
+		WHERE entry_id = ?
+		ORDER BY created_at, id
+	`, entryID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var attachments []EntryAttachment
+	for rows.Next() {
+		var att EntryAttachment
+		if err := rows.Scan(
+			&att.ID,
+			&att.EntryID,
+			&att.Title,
+			&att.FileName,
+			&att.OriginalPath,
+			&att.StoreRelPath,
+			&att.SHA256,
+			&att.SizeBytes,
+			&att.ModePerm,
+			&att.CreatedAt,
+			&att.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		attachments = append(attachments, att)
+	}
+	return attachments, rows.Err()
+}
+
+// UpdateEntryAttachment commits a metadata change (title and/or stored-file
+// fields) and bumps the entry timestamp. Replacement bytes must already be
+// staged; the caller removes the previous stored tree afterwards.
+func (d *DB) UpdateEntryAttachment(att EntryAttachment) error {
+	_, err := d.conn.Exec(`
+		UPDATE entry_attachments
+		SET title = ?, file_name = ?, original_path = ?, store_rel_path = ?, sha256 = ?, size_bytes = ?, mode_perm = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE entry_id = ? AND id = ?
+	`, att.Title, att.FileName, att.OriginalPath, att.StoreRelPath, att.SHA256, att.SizeBytes, att.ModePerm, att.EntryID, att.ID)
+	if err != nil {
+		return err
+	}
+	return d.UpdateEntryTime(att.EntryID)
+}
+
+func (d *DB) DeleteEntryAttachment(entryID, attachmentID string) error {
+	_, err := d.conn.Exec("DELETE FROM entry_attachments WHERE entry_id = ? AND id = ?", entryID, attachmentID)
+	if err != nil {
+		return err
+	}
+	return d.UpdateEntryTime(entryID)
+}
+
 // Search operations
 
 func (d *DB) Search(query string, topK int) ([]SearchResult, error) {
@@ -531,6 +696,19 @@ func (d *DB) Search(query string, topK int) ([]SearchResult, error) {
 }
 
 func (d *DB) SearchWithDeleted(query string, topK int, includeDeleted bool) ([]SearchResult, error) {
+	articleResults, err := d.searchArticles(query, topK, includeDeleted)
+	if err != nil {
+		return nil, err
+	}
+	attachmentResults, err := d.searchAttachments(query, topK, includeDeleted)
+	if err != nil {
+		return nil, err
+	}
+	return mergeNormalizedSearchResults(articleResults, attachmentResults, topK), nil
+}
+
+// searchArticles returns raw BM25 article hits (Type "article").
+func (d *DB) searchArticles(query string, topK int, includeDeleted bool) ([]SearchResult, error) {
 	hasDeleted := d.hasDeletedColumn("entries") && d.hasDeletedColumn("articles")
 
 	var whereClause string
@@ -566,9 +744,105 @@ func (d *DB) SearchWithDeleted(query string, topK int, includeDeleted bool) ([]S
 		if title.Valid {
 			r.Title = title.String
 		}
+		r.Type = "article"
 		results = append(results, r)
 	}
 	return results, rows.Err()
+}
+
+// searchAttachments returns raw BM25 attachment metadata hits (Type "attachment").
+func (d *DB) searchAttachments(query string, topK int, includeDeleted bool) ([]SearchResult, error) {
+	hasDeleted := d.hasDeletedColumn("entries")
+
+	var whereClause string
+	if !hasDeleted || includeDeleted {
+		whereClause = "entry_attachments_fts MATCH ?"
+	} else {
+		whereClause = "entry_attachments_fts MATCH ? AND e.deleted_at IS NULL"
+	}
+
+	rows, err := d.conn.Query(`
+		SELECT a.id, a.entry_id, a.title, a.file_name, a.original_path, a.store_rel_path,
+			   a.sha256, a.size_bytes, a.mode_perm, a.created_at, a.updated_at,
+			   e.title as entry_title, e.tags as entry_tags,
+			   bm25(entry_attachments_fts) as score
+		FROM entry_attachments_fts
+		JOIN entry_attachments a ON entry_attachments_fts.rowid = a.rowid
+		JOIN entries e ON a.entry_id = e.id
+		WHERE `+whereClause+`
+		ORDER BY score
+		LIMIT ?
+	`, query, topK)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var results []SearchResult
+	for rows.Next() {
+		var r SearchResult
+		if err := rows.Scan(
+			&r.ID, &r.EntryID, &r.Title, &r.FileName, &r.OriginalPath, &r.StoreRelPath,
+			&r.SHA256, &r.SizeBytes, &r.ModePerm, &r.CreatedAt, &r.UpdatedAt,
+			&r.EntryTitle, &r.EntryTags, &r.Score,
+		); err != nil {
+			return nil, err
+		}
+		r.Type = "attachment"
+		results = append(results, r)
+	}
+	return results, rows.Err()
+}
+
+// mergeNormalizedSearchResults normalizes the score range of each candidate set
+// independently (raw BM25 values from separate FTS tables are not directly
+// comparable), then merges and sorts them into one ranked list capped at topK.
+func mergeNormalizedSearchResults(articleResults, attachmentResults []SearchResult, topK int) []SearchResult {
+	normalizeScoreSet(articleResults)
+	normalizeScoreSet(attachmentResults)
+
+	merged := make([]SearchResult, 0, len(articleResults)+len(attachmentResults))
+	merged = append(merged, articleResults...)
+	merged = append(merged, attachmentResults...)
+
+	sort.Slice(merged, func(i, j int) bool {
+		return merged[i].Score > merged[j].Score
+	})
+	if len(merged) > topK {
+		merged = merged[:topK]
+	}
+	return merged
+}
+
+// normalizeScoreSet maps a set's scores to the 0-1 range in place. A set with
+// a single hit (or all-equal scores) maps to 1.0 so lone matches compete fairly
+// with hits from the other FTS index.
+func normalizeScoreSet(results []SearchResult) {
+	if len(results) == 0 {
+		return
+	}
+	if len(results) == 1 {
+		results[0].Score = 1.0
+		return
+	}
+	min, max := results[0].Score, results[0].Score
+	for _, r := range results {
+		if r.Score < min {
+			min = r.Score
+		}
+		if r.Score > max {
+			max = r.Score
+		}
+	}
+	if max == min {
+		for i := range results {
+			results[i].Score = 1.0
+		}
+		return
+	}
+	for i := range results {
+		results[i].Score = (results[i].Score - min) / (max - min)
+	}
 }
 
 func (d *DB) Count() (int, error) {
@@ -586,6 +860,12 @@ func (d *DB) ArticleCount() (int, error) {
 func (d *DB) AssetCount() (int, error) {
 	var count int
 	err := d.conn.QueryRow("SELECT COUNT(*) FROM article_assets").Scan(&count)
+	return count, err
+}
+
+func (d *DB) AttachmentCount() (int, error) {
+	var count int
+	err := d.conn.QueryRow("SELECT COUNT(*) FROM entry_attachments").Scan(&count)
 	return count, err
 }
 
@@ -715,15 +995,16 @@ func (d *DB) Close() error {
 }
 
 type Stats struct {
-	TotalEntries    int
-	ActiveEntries   int
-	DeletedEntries  int
-	TotalArticles   int
-	ActiveArticles  int
-	DeletedArticles int
-	TotalAssets     int
-	TotalHistory    int
-	VectorCount     int
+	TotalEntries     int
+	ActiveEntries    int
+	DeletedEntries   int
+	TotalArticles    int
+	ActiveArticles   int
+	DeletedArticles  int
+	TotalAssets      int
+	TotalAttachments int
+	TotalHistory     int
+	VectorCount      int
 }
 
 func (d *DB) Stats() (*Stats, error) {
@@ -736,6 +1017,9 @@ func (d *DB) Stats() (*Stats, error) {
 		return nil, err
 	}
 	if err := d.conn.QueryRow("SELECT COUNT(*) FROM article_assets").Scan(&s.TotalAssets); err != nil {
+		return nil, err
+	}
+	if err := d.conn.QueryRow("SELECT COUNT(*) FROM entry_attachments").Scan(&s.TotalAttachments); err != nil {
 		return nil, err
 	}
 
