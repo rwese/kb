@@ -108,15 +108,34 @@ Produces Obsidian-compatible markdown with assets copied alongside:
 ```
 out/http-cache-bug/http-cache-bug.md
 out/http-cache-bug/assets/2f018d-273b00/trace.har
-out/http-cache-bug/assets/attachments/a1b2c3/helper
+out/http-cache-bug/attachments/a1b2c3/helper      # only with --with-attachments
+out/INDEX.md
 ```
 
-The main entry file links attachments relative:
+Entry attachments (titled files attached to an entry, not article assets) are
+exported only with `--with-attachments`; without it neither the files nor the
+`## Attachments` section are written. With the flag they land in an
+`attachments/` subdirectory of the entry export and are linked relative:
+
+```bash
+kb export --all --with-attachments -o out
+```
 
 ```markdown
 ## Attachments
 
-- [Linux helper executable](assets/attachments/a1b2c3/helper) (`helper`, 2.1 KB)
+- [Linux helper executable](attachments/a1b2c3/helper) (`helper`, 2.1 KB)
+```
+
+Every export also writes an Obsidian `INDEX.md` at the output root for browsing:
+one section per entry, and per file a wikilink, the heading, a short
+description of the article's first paragraph, and the entry tags:
+
+```markdown
+## HTTP Cache Bug
+
+- [[http-cache-bug|HTTP Cache Bug]] — Steps to reproduce... #bug #cache
+- [[fix-details|Fix Details]] — Throttle with requestAnimationFrame. #bug #cache
 ```
 
 ## Command reference

@@ -111,7 +111,12 @@ kb entry article delete <entry-id> <article-id>
 kb entry delete <entry-id>
 ```
 
-Run export with `--dry-run` before writing. Entry and article deletion is permanent; an entry deletion also removes its articles, vectors, article assets, and attachments. Keep the confirmation prompt unless non-interactive deletion was explicitly authorized; with `--force`, missing entry IDs are skipped and the remaining entries are still deleted.
+Run export with `--dry-run` before writing. Pass `--with-attachments` to also
+export entry attachments into an `attachments/` subdirectory of each entry
+(markdown-only exports omit them entirely). Every export run writes an Obsidian
+`INDEX.md` at the output root with one section per entry and, per exported file,
+a wikilink, heading, short description, and the entry tags — open it to browse
+the vault. Entry and article deletion is permanent; an entry deletion also removes its articles, vectors, article assets, and attachments. Keep the confirmation prompt unless non-interactive deletion was explicitly authorized; with `--force`, missing entry IDs are skipped and the remaining entries are still deleted.
 
 ## Completion
 
