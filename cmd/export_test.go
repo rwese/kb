@@ -1,10 +1,12 @@
 package cmd
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rwese/kb/internal/db"
 )
@@ -172,5 +174,148 @@ func TestExportEntryAttachmentWithArticleKeepsAssetSection(t *testing.T) {
 	}
 	if !strings.Contains(text, "body") {
 		t.Fatalf("article body missing from entry file:\n%s", text)
+	}
+}
+
+func TestGenerateIndexProducesBrowsableObsidianIndex(t *testing.T) {
+	outputDir := filepath.Join(t.TempDir(), "out")
+	generatedAt := time.Date(2026, 5, 20, 0, 0, 0, 0, time.UTC)
+
+	entries := []exportItem{
+		{
+			entry: &db.Entry{ID: "entry1", Title: "HTTP Cache Bug", Tags: "bug,cache", CreatedAt: "2026-05-01 10:00:00"},
+			articles: []articleView{
+				{Article: db.Article{ID: "entry1-art1", EntryID: "entry1", Title: "Reproduction Notes", Content: "**Steps** to reproduce with [link](https://example.com)\n\nSecond paragraph."}},
+				{Article: db.Article{ID: "entry1-art2", EntryID: "entry1", Title: "Fix Details", Content: "Throttle with requestAnimationFrame."}},
+				{Article: db.Article{ID: "entry1-art3", EntryID: "entry1", Title: "Notes", Content: "Scratch notes."}},
+			},
+		},
+		{
+			entry: &db.Entry{ID: "entry2", Title: "Linux Helper", Tags: "", CreatedAt: "2026-05-01 10:00:00"},
+		},
+		{
+			entry: &db.Entry{ID: "entry3", Title: "Second Bug", Tags: "bug", CreatedAt: "2026-05-01 10:00:00"},
+			articles: []articleView{
+				{Article: db.Article{ID: "entry3-art1", EntryID: "entry3", Title: "Repro", Content: "How to reproduce."}},
+				{Article: db.Article{ID: "entry3-art2", EntryID: "entry3", Title: "Notes", Content: "Other notes."}},
+			},
+		},
+	}
+
+	content, err := generateIndex(entries, outputDir, generatedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Front matter and heading.
+	if !strings.Contains(content, "title: Knowledge Base Index") {
+		t.Fatalf("missing index front matter title:\n%s", content)
+	}
+	if !strings.Contains(content, "# Knowledge Base Index") {
+		t.Fatalf("missing index heading:\n%s", content)
+	}
+
+	// Section heading per entry.
+	if !strings.Contains(content, "## HTTP Cache Bug") {
+		t.Fatalf("missing entry section heading:\n%s", content)
+	}
+
+	// Primary file: basename wikilink with heading alias when unique.
+	if !strings.Contains(content, "[[http-cache-bug|HTTP Cache Bug]]") {
+		t.Fatalf("missing primary wikilink:\n%s", content)
+	}
+	// Unique article basename resolves to the basename link.
+	if !strings.Contains(content, "[[fix-details|Fix Details]]") {
+		t.Fatalf("missing unique article wikilink:\n%s", content)
+	}
+	// Duplicate basenames (Notes) fall back to vault-relative paths.
+	if !strings.Contains(content, "[[http-cache-bug/notes|Notes]]") {
+		t.Fatalf("missing path-disambiguated wikilink:\n%s", content)
+	}
+	if !strings.Contains(content, "[[second-bug/notes|Notes]]") {
+		t.Fatalf("missing second path-disambiguated wikilink:\n%s", content)
+	}
+	if strings.Contains(content, "- [[notes|") {
+		t.Fatalf("ambiguous basename must not be used bare:\n%s", content)
+	}
+
+	// Short description: bold/link markdown stripped, one paragraph only.
+	if !strings.Contains(content, "Steps to reproduce with link") {
+		t.Fatalf("markdown not stripped from description:\n%s", content)
+	}
+	if strings.Contains(content, "Second paragraph") {
+		t.Fatalf("description must stop at first paragraph:\n%s", content)
+	}
+
+	// Tags in Obsidian syntax, inherited from the entry.
+	if !strings.Contains(content, "#bug #cache") {
+		t.Fatalf("missing obsidian tags:\n%s", content)
+	}
+
+	// Attachment-only entry without articles.
+	if !strings.Contains(content, "[[linux-helper|Linux Helper]] — *No content*") {
+		t.Fatalf("missing attachment-only entry line:\n%s", content)
+	}
+}
+
+func TestShortDescriptionTruncates(t *testing.T) {
+	long := strings.Repeat("word ", 100)
+	desc := shortDescription(long + "\n\n# Heading")
+	if len(desc) > 165 {
+		t.Fatalf("description not truncated: %d chars", len(desc))
+	}
+	if !strings.HasSuffix(desc, "…") {
+		t.Fatalf("truncated description should end with ellipsis: %q", desc)
+	}
+}
+
+
+func TestExportAllWritesIndexFile(t *testing.T) {
+	env := setupTempKBTestEnv(t)
+
+	database, err := db.Open(env.DBPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = database.Close() }()
+	if err := database.Init(); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.AddEntry("entry01", "Alpha Entry", "alpha,test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.AddArticle("entry01-art01", "entry01", "First Article", "Alpha body text."); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.AddArticle("entry01-art02", "entry01", "Second Article", "More alpha details."); err != nil {
+		t.Fatal(err)
+	}
+
+	outputDir := filepath.Join(t.TempDir(), "vault")
+	commands := &Commands{}
+	if err := commands.Run(context.Background(), []string{"kb", "export", "--all", "--force", "-o", outputDir}); err != nil {
+		t.Fatalf("export command failed: %v", err)
+	}
+
+	indexPath := filepath.Join(outputDir, "INDEX.md")
+	content, err := os.ReadFile(indexPath)
+	if err != nil {
+		t.Fatalf("INDEX.md missing: %v", err)
+	}
+	text := string(content)
+	if !strings.Contains(text, "## Alpha Entry") {
+		t.Fatalf("index missing entry section:\n%s", text)
+	}
+	if !strings.Contains(text, "[[alpha-entry|Alpha Entry]]") {
+		t.Fatalf("index missing entry wikilink:\n%s", text)
+	}
+	if !strings.Contains(text, "[[second-article|Second Article]]") {
+		t.Fatalf("index missing article wikilink:\n%s", text)
+	}
+	if !strings.Contains(text, "#alpha #test") {
+		t.Fatalf("index missing tags:\n%s", text)
+	}
+	if !strings.Contains(text, "Alpha body text") {
+		t.Fatalf("index missing description:\n%s", text)
 	}
 }
