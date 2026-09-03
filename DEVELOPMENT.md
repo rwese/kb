@@ -42,7 +42,7 @@ CGO_CFLAGS="-DSQLITE_ENABLE_FTS5" go test ./...
 
 - `just test` does **not** set `CGO_CFLAGS`. Export it first (`export CGO_CFLAGS="-DSQLITE_ENABLE_FTS5"`) so tooling runs consistently.
 - `golangci-lint` must be installed separately for `just lint` / `just check`.
-- The `sqlite_fts5` build tag is defensive: the FTS5 feature is actually gated by the CGO define, so always pass both.
+- The `sqlite_fts5` tag is required, not decorative: it activates `sqlite3_opt_fts5.go` in mattn/go-sqlite3, which adds the FTS5 define **and `-lm`** (the link flag Linux needs for FTS5's `log()`). Without the tag on Linux, linking fails with `undefined reference to 'log'`; macOS does not need `-lm` so it masks the error. Always pass both the tag and the CGO define.
 
 ## Project layout
 

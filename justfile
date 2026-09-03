@@ -20,12 +20,13 @@ install:
 	CGO_CFLAGS="-DSQLITE_ENABLE_FTS5" go install -tags sqlite_fts5 .
 
 # Run tests
+# NOTE: -tags sqlite_fts5 is required — enables FTS5 + -lm on Linux (link error without)
 test:
-	go test ./...
+	CGO_CFLAGS="-DSQLITE_ENABLE_FTS5" go test -tags sqlite_fts5 ./...
 
 # Run tests with verbose output
 test-verbose:
-	go test -v ./...
+	CGO_CFLAGS="-DSQLITE_ENABLE_FTS5" go test -tags sqlite_fts5 -v ./...
 
 # Clean build artifacts
 clean:

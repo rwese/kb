@@ -37,7 +37,7 @@ jobs:
       - name: Test
         env:
           CGO_CFLAGS: -DSQLITE_ENABLE_FTS5
-        run: go test ./...
+        run: go test -tags sqlite_fts5 ./...
 
       - name: Build binary
         env:
