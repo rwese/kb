@@ -5,8 +5,8 @@ A lightweight knowledgebase for the terminal. Keep notes on topics, grow them ov
 ## Features
 
 - **Entries & articles** — a topic with a growing history of notes
-- **File attachments** — keep screenshots, traces, or documents with the notes they belong to
-- **Full-text search** — fast keyword search over everything you stored
+- **File attachments** — attach one titled file (script, archive, document) directly to an entry; keep screenshots, traces, or documents with the notes they belong to
+- **Full-text search** — fast keyword search over articles and attachment titles/filenames
 - **Semantic search** *(optional)* — find notes by meaning, not just keywords, via Ollama
 - **Obsidian export** — export everything as markdown at any time
 
@@ -51,6 +51,9 @@ kb entry article add 2f018d "Fix: throttle with requestAnimationFrame"
 # Attach evidence
 kb entry article asset add 2f018d 2f018d-273b00 ./trace.har ./screenshots
 
+# Attach a file directly to an entry
+kb entry attachment add --title "Linux helper executable" 2f018d ./bin/helper
+
 # Search everything
 kb search "flickering"
 ```
@@ -69,7 +72,7 @@ top_k: 5   # default number of search results
 
 ## Search
 
-`kb search <query>` finds articles by keyword, ranked by relevance. Results are grouped by entry and stay compact — the entry's id, title and tags, plus the matching articles. No content is included by default:
+`kb search <query>` finds articles by keyword, ranked by relevance. Results are grouped by entry and stay compact — the entry's id, title and tags, plus the matching articles. Attachment-only entries are found by attachment **title** or **file name** (binary contents are never indexed). No content is included by default:
 
 ```
 ID: 2f018d, Title: Bug: List Flickering, Tags: ui,bug
@@ -105,6 +108,15 @@ Produces Obsidian-compatible markdown with assets copied alongside:
 ```
 out/http-cache-bug/http-cache-bug.md
 out/http-cache-bug/assets/2f018d-273b00/trace.har
+out/http-cache-bug/assets/attachments/a1b2c3/helper
+```
+
+The main entry file links attachments relative:
+
+```markdown
+## Attachments
+
+- [Linux helper executable](assets/attachments/a1b2c3/helper) (`helper`, 2.1 KB)
 ```
 
 ## Command reference
@@ -115,8 +127,11 @@ out/http-cache-bug/assets/2f018d-273b00/trace.har
 | `kb entry create -t <title>` | New entry (optionally with a first article via `-c` or `-f`) |
 | `kb entry list` | List entries |
 | `kb entry get <id> --articles` | Show an entry with its articles and assets |
+| `kb entry get <id> --attachments` | Show an entry with its attachments |
 | `kb entry article add <entry> "note"` | Append a note to an entry |
-| `kb entry article asset add <entry> <article> <path>...` | Attach files or directories |
+| `kb entry article asset add <entry> <article> <path>...` | Attach files or directories to an article |
+| `kb entry attachment add -t <title> <entry> <file>` | Attach one titled file to an entry |
+| `kb entry attachment list|get|update|delete <entry> ...` | List, inspect, rename/replace, or delete attachments |
 | `kb search <query>` | Search your notes |
 | `kb status` | Validate installation and database |
 | `kb stats` | Database statistics |
@@ -129,13 +144,13 @@ Use `kb <command> --help` for full options on any command.
 
 ```
 Entry (a topic)                kb entry create
-└── Article 1                  initial notes
-└── Article 2                  kb entry article add
-└── Article 3
-        └── Assets             kb entry article asset add
+├── Article 1                  initial notes
+├── Article 2                  kb entry article add
+│       └── Assets             kb entry article asset add
+└── Attachment                 kb entry attachment add (one file, titled)
 ```
 
-Entries get short ids (`2f018d`), articles get `entry-article` ids (`2f018d-273b00`). Use these ids with any command, or look them up with `kb entry list`.
+Entries get short ids (`2f018d`), articles get `entry-article` ids (`2f018d-273b00`), and attachments have six-character ids scoped to their entry — every attachment command takes the entry id first. Use these ids with any command, or look them up with `kb entry list`.
 
 ## Deleting
 

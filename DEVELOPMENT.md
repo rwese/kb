@@ -52,10 +52,10 @@ CGO_CFLAGS="-DSQLITE_ENABLE_FTS5" go test ./...
 | `main.go` | entrypoint; wires `cmd.Commands` |
 | `cmd/` | urfave/cli/v3 command definitions and orchestration |
 | `cmd/*_test.go` | CLI-level integration tests (hermetic, see below) |
-| `internal/db/` | SQLite storage: entries, articles, assets, FTS index, vectors |
-| `internal/search/` | BM25 and hybrid ranking (`ranker.go`) |
+| `internal/db/` | SQLite storage: entries, articles, assets, attachments, FTS index, vectors |
+| `internal/search/` | BM25, hybrid ranking, and per-set score normalization (`ranker.go`) |
 | `internal/embed/` | embedding providers: `ollama.go` (server) |
-| `internal/assets/` | asset import/staging/cleanup (KB-owned copies) |
+| `internal/assets/` | asset + attachment import/staging/cleanup (KB-owned copies) |
 | `internal/id/` | id generation (6 hex chars) |
 | `internal/config/` | config discovery, defaults, `~` expansion |
 | `docs/prds/` | feature specifications (export) |
@@ -67,10 +67,12 @@ CGO_CFLAGS="-DSQLITE_ENABLE_FTS5" go test ./...
 kb
 ├── entry
 │   ├── list | create | get | update | delete     # entries
-│   └── article
-│       ├── list | add | get | update | delete    # articles
-│       └── asset
-│           └── add | list | get | delete         # attached files
+│   ├── article
+│   │   ├── list | add | get | update | delete    # articles
+│   │   └── asset
+│   │       └── add | list | get | delete         # attached files
+│   └── attachment
+│       └── add | list | get | update | delete    # titled entry files
 ├── search        # weighted retrieval (see Ranking)
 ├── export        # Obsidian markdown
 ├── init | status | stats | config                # database & install
@@ -99,13 +101,18 @@ Tests never touch a real knowledgebase. `setupTempKBTestEnv` (in `cmd/test_helpe
 
 `asset add` copies files (directories are walked) into KB-owned storage under `<assets_path>/<articleID>/<assetID>/<logical path>`. Symlinks are rejected, path traversal is blocked, and a colliding logical path requires `--overwrite` (which replaces the stored file tree). Imports are staged in a temp area first and cleaned up on failure.
 
+### Attachment model
+
+`attachment add` copies **exactly one regular file** into KB-owned storage under `<assets_path>/entries/<entryID>/attachments/<attachmentID>/<file name>` — a namespace separate from article assets. Directories, symlinks, sockets, devices, and named pipes are rejected; the title is trimmed and must be non-empty; SHA-256, byte size, and regular permission bits (including the executable bit; special bits stripped) are recorded. The file is treated as opaque untrusted bytes: never inspected, sourced, or executed. Replacement and deletion stage new bytes before the metadata commit and return an explicit partial-failure error when the old stored bytes cannot be removed.
+
 ### Ranking (current implementation)
 
-1. BM25 search over the FTS index (`top_k * 2` candidates).
-2. If an embedder is configured and `--bm25-only` is not set, embed the query and re-rank: BM25 scores are normalized to 0–1 and blended with the query-vector similarity at a fixed 0.3/0.7 BM25/semantic split (`search.DefaultRanker`).
-3. `--prompt` text is used as the query (falls back to the positional arg). The `--context`/`--context-file` flags exist but are currently unused. 
+1. BM25 search over the article FTS index and the attachment metadata FTS index (`top_k * 2` candidates each). Article hits keep the current BM25 pipeline; attachment hits rank on title + file name only (binary contents are never indexed).
+2. Each candidate set is normalized to 0–1 separately at the database layer before merging — raw BM25 values from separate FTS tables are not directly comparable.
+3. If an embedder is configured and `--bm25-only` is not set, embed the query and re-rank **article hits only** (attachment hits keep their normalized BM25 score): BM25 scores are normalized to 0–1 and blended with the query-vector similarity at a fixed 0.3/0.7 BM25/semantic split (`search.DefaultRanker`).
+4. `--prompt` text is used as the query (falls back to the positional arg). The `--context`/`--context-file` flags exist but are currently unused.
 
-If no query embedding is available, search falls back to BM25 results only.
+If no query embedding is available, search falls back to the merged BM25 results.
 
 ## Writing tests
 

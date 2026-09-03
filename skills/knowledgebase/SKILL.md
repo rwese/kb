@@ -10,6 +10,7 @@ Use `kb` as durable local memory.
 - **Entry**: one topic; holds the title and tags.
 - **Article**: one searchable note within an entry.
 - **Asset**: a KB-owned file attached to an article.
+- **Attachment**: one titled, KB-owned regular file attached directly to an entry (parallel to an article), e.g. a script or archive.
 
 Keep each article focused on one reusable fact, procedure, or decision. Add an article when the topic stays the same; create an entry when the topic changes.
 
@@ -83,6 +84,22 @@ kb entry article asset delete --json <entry-id> <article-id> <asset-id>
 
 Use `--overwrite` on `asset add` only when replacing a colliding logical path is intended.
 
+## Attach entry attachments
+
+Keep a binary or executable file with the entry it belongs to (not inside an article):
+
+```bash
+kb entry attachment add --title "Linux helper executable" \
+  <entry-id> path/to/file
+kb entry attachment list --json <entry-id>
+kb entry attachment get --json <entry-id> <attachment-id>
+kb entry attachment update --title "New title" --file path/to/replacement \
+  <entry-id> <attachment-id>
+kb entry attachment delete --force <entry-id> <attachment-id>
+```
+
+`attachment add` accepts exactly one regular file; directories, symlinks, and special files are rejected, so add attachments for single files only. Attachment IDs are six characters and entry-scoped — always pass the entry ID first.
+
 ## Export and delete
 
 ```bash
@@ -94,7 +111,7 @@ kb entry article delete <entry-id> <article-id>
 kb entry delete <entry-id>
 ```
 
-Run export with `--dry-run` before writing. Entry and article deletion is permanent; an entry deletion also removes its articles, vectors, and assets. Keep the confirmation prompt unless non-interactive deletion was explicitly authorized.
+Run export with `--dry-run` before writing. Entry and article deletion is permanent; an entry deletion also removes its articles, vectors, article assets, and attachments. Keep the confirmation prompt unless non-interactive deletion was explicitly authorized.
 
 ## Completion
 
