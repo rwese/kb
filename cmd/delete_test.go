@@ -9,6 +9,35 @@ import (
 	"github.com/rwese/kb/internal/db"
 )
 
+func TestDeleteEntryForceSkipsMissingAndDeletesOthers(t *testing.T) {
+	env := setupTempKBTestEnv(t)
+
+	database, err := db.Open(env.DBPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = database.Close() }()
+	if err := database.Init(); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.AddEntry("keep01", "title keep01", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	commands := &Commands{}
+	if err := commands.Run(context.Background(), []string{"kb", "delete", "entry", "missing01", "keep01", "--force"}); err != nil {
+		t.Fatalf("delete command failed: %v", err)
+	}
+
+	entryCount, err := database.Count()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entryCount != 0 {
+		t.Fatalf("entry count = %d, want 0 (others still deleted)", entryCount)
+	}
+}
+
 func TestDeleteEntryUsesIsolatedTempDatabase(t *testing.T) {
 	env := setupTempKBTestEnv(t)
 

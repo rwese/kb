@@ -13,7 +13,7 @@ func (c *Commands) deleteCmd() *cli.Command {
 				Usage:     "Delete one or more entries and all their articles",
 				ArgsUsage: "<id> [id...]",
 				Flags: []cli.Flag{
-					&cli.BoolFlag{Name: "force", Aliases: []string{"f"}, Usage: "Skip confirmation"},
+					&cli.BoolFlag{Name: "force", Aliases: []string{"f"}, Usage: "Skip confirmation and ignore missing entries"},
 				},
 				Action: c.entryDelete().Action,
 			},

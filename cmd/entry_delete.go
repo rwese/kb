@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	assetstore "github.com/rwese/kb/internal/assets"
@@ -16,7 +17,7 @@ func (c *Commands) entryDelete() *cli.Command {
 		Usage:     "Delete an entry and all its articles",
 		ArgsUsage: "<id> [id...]",
 		Flags: []cli.Flag{
-			&cli.BoolFlag{Name: "force", Aliases: []string{"f"}, Usage: "Skip confirmation"},
+			&cli.BoolFlag{Name: "force", Aliases: []string{"f"}, Usage: "Skip confirmation and ignore missing entries"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			cfg, err := config.Discover()
@@ -50,6 +51,10 @@ func deleteEntry(database *db.DB, assetsPath, id string, force bool) error {
 	// Verify entry exists
 	_, err := database.GetEntry(id)
 	if err != nil {
+		if force && errors.Is(err, db.ErrNotFound) {
+			fmt.Printf("Entry %s does not exist, skipping\n", id)
+			return nil
+		}
 		return fmt.Errorf("entry %s not found: %w", id, err)
 	}
 
