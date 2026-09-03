@@ -28,7 +28,9 @@ func DefaultRanker() *Ranker {
 	}
 }
 
-// HybridSearch combines BM25 scores with semantic similarity
+// HybridSearch combines BM25 scores with semantic similarity. Attachment
+// metadata hits carry per-set normalized BM25 scores and are re-ranked only
+// within their own set; semantic re-ranking applies to article hits only.
 func (r *Ranker) HybridSearch(
 	ctx context.Context,
 	results []db.SearchResult,
@@ -39,9 +41,15 @@ func (r *Ranker) HybridSearch(
 		return results
 	}
 
-	// Find min/max BM25 scores for normalization
+	// Find min/max BM25 scores for normalization over article hits only;
+	// attachment hits were already normalized per set at query time.
 	var minBM25, maxBM25 = math.MaxFloat64, -math.MaxFloat64
+	hasArticle := false
 	for _, res := range results {
+		if res.Type != "article" {
+			continue
+		}
+		hasArticle = true
 		if res.Score < minBM25 {
 			minBM25 = res.Score
 		}
@@ -49,9 +57,16 @@ func (r *Ranker) HybridSearch(
 			maxBM25 = res.Score
 		}
 	}
+	if !hasArticle {
+		return results
+	}
 
 	// Calculate hybrid scores
 	for i := range results {
+		if results[i].Type != "article" {
+			continue
+		}
+
 		// Normalize BM25 score to 0-1 (BM25 is typically negative, higher is better)
 		bm25Norm := NormalizeBM25(results[i].Score, minBM25, maxBM25)
 		results[i].BM25Score = bm25Norm
@@ -73,7 +88,7 @@ func (r *Ranker) HybridSearch(
 		results[i].Score = r.BM25Weight*bm25Norm + r.SemanticWeight*cosineSim
 	}
 
-	// Sort by score descending
+	// Sort by score descending (attachment hits keep their normalized scores)
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].Score > results[j].Score
 	})

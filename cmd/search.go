@@ -99,6 +99,10 @@ func formatSearchResults(results []db.SearchResult, format string, bm25Only, con
 		return enc.Encode(results)
 	case "simple":
 		for _, r := range results {
+			if r.Type == "attachment" {
+				fmt.Printf("[%.2f] attachment %s: %s (file %s, entry %s)\n\n", r.Score, r.Title, r.FileName, r.EntryID, r.ID)
+				continue
+			}
 			fmt.Printf("[%.2f] %s (entry %s)\n%s\n\n", r.Score, r.EntryTitle, r.EntryID, r.Content)
 		}
 	default: // markdown
@@ -112,29 +116,40 @@ func formatSearchResults(results []db.SearchResult, format string, bm25Only, con
 }
 
 // formatSearchResultsCompact groups matches by entry: entry headline, the
-// matching articles, and a truncated content excerpt from the best match.
+// matching articles, matching attachments, and a truncated content excerpt
+// from the best matching article.
 func formatSearchResultsCompact(results []db.SearchResult, includeContent bool) {
 	type entryGroup struct {
-		entryID    string
-		entryTitle string
-		entryTags  string
-		articles   []db.SearchResult
+		entryID     string
+		entryTitle  string
+		entryTags   string
+		articles    []db.SearchResult
+		attachments []db.SearchResult
 	}
 
 	seen := make(map[string]int)
 	var groups []entryGroup
 	for _, r := range results {
 		if i, ok := seen[r.EntryID]; ok {
-			groups[i].articles = append(groups[i].articles, r)
+			if r.Type == "attachment" {
+				groups[i].attachments = append(groups[i].attachments, r)
+			} else {
+				groups[i].articles = append(groups[i].articles, r)
+			}
 			continue
 		}
 		seen[r.EntryID] = len(groups)
-		groups = append(groups, entryGroup{
+		g := entryGroup{
 			entryID:    r.EntryID,
 			entryTitle: r.EntryTitle,
 			entryTags:  r.EntryTags,
-			articles:   []db.SearchResult{r},
-		})
+		}
+		if r.Type == "attachment" {
+			g.attachments = []db.SearchResult{r}
+		} else {
+			g.articles = []db.SearchResult{r}
+		}
+		groups = append(groups, g)
 	}
 
 	for _, g := range groups {
@@ -143,12 +158,21 @@ func formatSearchResultsCompact(results []db.SearchResult, includeContent bool) 
 			fmt.Printf(", Tags: %s", g.entryTags)
 		}
 		fmt.Printf("\n\n")
-		fmt.Println("Entry-Article(s):")
-		fmt.Printf("\n")
-		for _, a := range g.articles {
-			fmt.Printf("Article-ID: %s, Title: %s\n", a.ID, a.Title)
+		if len(g.articles) > 0 {
+			fmt.Println("Entry-Article(s):")
+			fmt.Printf("\n")
+			for _, a := range g.articles {
+				fmt.Printf("Article-ID: %s, Title: %s\n", a.ID, a.Title)
+			}
 		}
-		if includeContent {
+		if len(g.attachments) > 0 {
+			fmt.Println("Entry-Attachment(s):")
+			fmt.Printf("\n")
+			for _, a := range g.attachments {
+				fmt.Printf("Attachment-ID: %s, Title: %s, File: %s\n", a.ID, a.Title, a.FileName)
+			}
+		}
+		if includeContent && len(g.articles) > 0 {
 			fmt.Printf("\nEntry-Content:\n\n")
 			excerpt, truncated := truncateContent(g.articles[0].Content, 10)
 			fmt.Println(excerpt)
@@ -175,10 +199,20 @@ func formatSearchResultsVerbose(results []db.SearchResult, bm25Only bool) {
 		if r.BM25Score > 0 || r.SemanticScore > 0 {
 			fmt.Printf("  (BM25: %.2f + Semantic: %.2f)\n", r.BM25Score, r.SemanticScore)
 		}
-		if r.Title != "" {
-			fmt.Printf("- Article: %s\n", r.Title)
+		switch r.Type {
+		case "attachment":
+			fmt.Printf("- Type: attachment\n")
+			fmt.Printf("- Attachment ID: %s\n", r.ID)
+			fmt.Printf("- Attachment: %s\n", r.Title)
+			fmt.Printf("- File: %s\n", r.FileName)
+			fmt.Printf("- Size: %d bytes\n", r.SizeBytes)
+		default:
+			fmt.Printf("- Type: article\n")
+			if r.Title != "" {
+				fmt.Printf("- Article: %s\n", r.Title)
+			}
+			fmt.Printf("\n---\n\n%s\n\n", r.Content)
 		}
-		fmt.Printf("\n---\n\n%s\n\n", r.Content)
 	}
 }
 
