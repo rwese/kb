@@ -10,20 +10,20 @@ import (
 )
 
 type Ranker struct {
-	BM25Weight    float64
+	BM25Weight     float64
 	SemanticWeight float64
 }
 
 func NewRanker(bm25Weight, semanticWeight float64) *Ranker {
 	return &Ranker{
-		BM25Weight:    bm25Weight,
+		BM25Weight:     bm25Weight,
 		SemanticWeight: semanticWeight,
 	}
 }
 
 func DefaultRanker() *Ranker {
 	return &Ranker{
-		BM25Weight:    0.3,
+		BM25Weight:     0.3,
 		SemanticWeight: 0.7,
 	}
 }

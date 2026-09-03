@@ -41,16 +41,16 @@ const (
 
 // LocalEmbedder uses llama.cpp compiled library for embeddings
 type LocalEmbedder struct {
-	modelPath  string
+	modelPath   string
 	libraryPath string
 	initialized bool
-	errorMsg   string
+	errorMsg    string
 }
 
 // NewLocalEmbedder creates a new local embedder
 func NewLocalEmbedder(cfg *config.LocalConfig) (*LocalEmbedder, error) {
 	le := &LocalEmbedder{
-		modelPath:  filepath.Join(cfg.CacheDir, ModelFileName),
+		modelPath:   filepath.Join(cfg.CacheDir, ModelFileName),
 		libraryPath: filepath.Join(cfg.CacheDir, getLibraryFileName()),
 	}
 
