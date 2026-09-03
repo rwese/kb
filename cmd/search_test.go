@@ -23,7 +23,9 @@ func runCmdCapture(t *testing.T, c *Commands, args ...string) string {
 
 	runErr := c.Run(context.Background(), args)
 
-	w.Close()
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
 	os.Stdout = old
 
 	if runErr != nil {
@@ -48,7 +50,7 @@ func seedSearchTestEnv(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 	if err := database.Init(); err != nil {
 		t.Fatal(err)
 	}

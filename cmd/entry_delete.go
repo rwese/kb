@@ -28,7 +28,7 @@ func (c *Commands) entryDelete() *cli.Command {
 			if err != nil {
 				return err
 			}
-			defer database.Close()
+			defer func() { _ = database.Close() }()
 
 			ids := cmd.Args().Slice()
 			if len(ids) == 0 {

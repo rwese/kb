@@ -23,7 +23,7 @@ func (c *Commands) stats() *cli.Command {
 			if err != nil {
 				return err
 			}
-			defer database.Close()
+			defer func() { _ = database.Close() }()
 			if err := database.Init(); err != nil {
 				return err
 			}

@@ -40,7 +40,7 @@ func (r *Ranker) HybridSearch(
 	}
 
 	// Find min/max BM25 scores for normalization
-	var minBM25, maxBM25 float64 = math.MaxFloat64, -math.MaxFloat64
+	var minBM25, maxBM25 = math.MaxFloat64, -math.MaxFloat64
 	for _, res := range results {
 		if res.Score < minBM25 {
 			minBM25 = res.Score

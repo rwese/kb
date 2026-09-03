@@ -13,9 +13,8 @@ type Embedder interface {
 }
 
 // EmbedderFactory creates an embedder based on config
-type EmbedderFactory struct {
-	cfg *config.Config
-}
+// (kept for API compatibility; no state is needed)
+type EmbedderFactory struct{}
 
 // NewEmbedder creates an embedder based on config
 func NewEmbedder(cfg *config.Config) Embedder {

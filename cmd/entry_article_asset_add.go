@@ -24,7 +24,7 @@ func (c *Commands) entryArticleAssetAdd() *cli.Command {
 			if err != nil {
 				return err
 			}
-			defer database.Close()
+			defer func() { _ = database.Close() }()
 
 			args := cmd.Args()
 			if args.Len() < 3 {

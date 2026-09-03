@@ -28,7 +28,7 @@ func (c *Commands) entryArticleDelete() *cli.Command {
 			if err != nil {
 				return err
 			}
-			defer database.Close()
+			defer func() { _ = database.Close() }()
 
 			args := cmd.Args()
 			if args.Len() < 2 {

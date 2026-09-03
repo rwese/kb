@@ -156,7 +156,7 @@ func copyWithHash(srcPath, destPath string) (string, int64, error) {
 	if err != nil {
 		return "", 0, err
 	}
-	defer src.Close()
+	defer func() { _ = src.Close() }()
 
 	info, err := src.Stat()
 	if err != nil {

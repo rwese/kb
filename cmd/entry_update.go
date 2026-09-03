@@ -28,7 +28,7 @@ func (c *Commands) entryUpdate() *cli.Command {
 			if err != nil {
 				return err
 			}
-			defer database.Close()
+			defer func() { _ = database.Close() }()
 
 			id := cmd.Args().First()
 			if id == "" {

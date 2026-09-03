@@ -18,7 +18,7 @@ func openDBFromConfig() (*config.Config, *db.DB, error) {
 		return nil, nil, err
 	}
 	if err := database.Init(); err != nil {
-		database.Close()
+		_ = database.Close()
 		return nil, nil, err
 	}
 	return cfg, database, nil

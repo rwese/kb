@@ -43,7 +43,7 @@ func (c *Commands) status() *cli.Command {
 					fmt.Println("✗ Failed to open database:", err)
 					errors++
 				} else {
-					defer database.Close()
+					defer func() { _ = database.Close() }()
 					if err := database.Init(); err != nil {
 						fmt.Println("✗ Failed to initialize schema:", err)
 						errors++

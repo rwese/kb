@@ -226,14 +226,16 @@ func (d *DB) hasDeletedColumn(table string) bool {
 	if err != nil {
 		return false
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var cid int
 		var name, ctype string
 		var notnull, pk int
 		var dflt interface{}
-		rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk)
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return false
+		}
 		if name == "deleted_at" {
 			return true
 		}
@@ -255,7 +257,7 @@ func (d *DB) ListEntriesWithDeleted(includeDeleted bool) ([]Entry, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var entries []Entry
 	for rows.Next() {
@@ -313,7 +315,7 @@ func (d *DB) GetArticlesWithDeleted(entryID string, includeDeleted bool) ([]Arti
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var articles []Article
 	for rows.Next() {
@@ -362,14 +364,18 @@ func (d *DB) UpdateArticle(id, title, content string) error {
 
 	// Update entry timestamp
 	var entryID string
-	d.conn.QueryRow("SELECT entry_id FROM articles WHERE id = ?", id).Scan(&entryID)
+	if err := d.conn.QueryRow("SELECT entry_id FROM articles WHERE id = ?", id).Scan(&entryID); err != nil {
+		return err
+	}
 	return d.UpdateEntryTime(entryID)
 }
 
 func (d *DB) DeleteArticle(id string) error {
 	// Get entry_id before delete
 	var entryID string
-	d.conn.QueryRow("SELECT entry_id FROM articles WHERE id = ?", id).Scan(&entryID)
+	if err := d.conn.QueryRow("SELECT entry_id FROM articles WHERE id = ?", id).Scan(&entryID); err != nil {
+		return err
+	}
 
 	_, err := d.conn.Exec("DELETE FROM articles WHERE id = ?", id)
 	if err != nil {
@@ -401,7 +407,7 @@ func (d *DB) SaveArticleAssets(entryID string, assets []ArticleAsset, overwriteI
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	for _, assetID := range overwriteIDs {
 		if _, err := tx.Exec("DELETE FROM article_assets WHERE id = ?", assetID); err != nil {
@@ -486,7 +492,7 @@ func (d *DB) ListArticleAssets(articleID string) ([]ArticleAsset, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var assets []ArticleAsset
 	for rows.Next() {
@@ -548,7 +554,7 @@ func (d *DB) SearchWithDeleted(query string, topK int, includeDeleted bool) ([]S
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var results []SearchResult
 	for rows.Next() {
@@ -640,7 +646,7 @@ func (d *DB) GetAllVectors() ([]Vector, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var vectors []Vector
 	for rows.Next() {
@@ -664,7 +670,7 @@ func (d *DB) GetArticleVectors(entryID string) (map[string][]float32, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	vectors := make(map[string][]float32)
 	for rows.Next() {

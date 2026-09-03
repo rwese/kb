@@ -37,7 +37,7 @@ func (c *Commands) entryCreate() *cli.Command {
 			if err != nil {
 				return err
 			}
-			defer database.Close()
+			defer func() { _ = database.Close() }()
 
 			var title, content, tags string
 

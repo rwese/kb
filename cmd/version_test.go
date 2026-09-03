@@ -20,7 +20,9 @@ func TestVersionFlag(t *testing.T) {
 
 		runErr := c.Run(context.Background(), args)
 
-		w.Close()
+		if err := w.Close(); err != nil {
+			t.Fatal(err)
+		}
 		os.Stdout = old
 
 		if runErr != nil {
