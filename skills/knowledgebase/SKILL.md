@@ -1,63 +1,103 @@
 ---
 name: knowledgebase
-description: "Manage and query a personal knowledgebase with weighted retrieval. Use when: (1) adding notes, documentation, or session outputs to memory, (2) searching for solutions to problems, (3) asking questions against stored knowledge with final prompt weighted higher than context. Triggers: 'add to knowledgebase', 'remember', 'lookup', 'search knowledge', 'what do we know about', 'how do I', 'fix for', 'problem with'."
+description: "knowledgebase search, lookup and storing of learnings, findings and helpers."
 ---
-
-> ⚠️ **Important**: Split large topics into multiple articles. Each article is individually searchable. A single monolithic entry hurts retrieval quality.
 
 # Knowledgebase
 
-Store and retrieve notes, documentation, and session outputs using the [`kb` CLI](https://github.com/rwese/kb).
+Use `kb` as durable local memory.
 
-## Prerequisites
+- **Entry**: one topic; holds the title and tags.
+- **Article**: one searchable note within an entry.
+- **Asset**: a KB-owned file attached to an article.
 
-- [`kb`](https://github.com/rwese/kb) installed (see [installation](https://github.com/rwese/kb#installation))
-- Run `kb setup` to initialize the database
+Keep each article focused on one reusable fact, procedure, or decision. Add an article when the topic stays the same; create an entry when the topic changes.
 
-## Data Model
-
-- **Entry**: Container for a topic (title + tags)
-- **Article**: Individual piece of content within an entry (searchable unit)
-
-Split large content into multiple articles. Example:
+## Inspect
 
 ```bash
-# ❌ Bad: One massive entry
-kb add -t "Kubernetes Debugging" -c "<5000 lines of logs>"
-
-# ✅ Good: Split by concern
-kb add -t "Kubernetes Debugging" -c "Overview and common patterns"
-kb append --entry-title "Kubernetes Debugging" -c "Pod scheduling failures"
-kb append --entry-title "Kubernetes Debugging" -c "Network policies"
-kb append --entry-title "Kubernetes Debugging" -c "Resource limits and OOMKills"
+kb status
+kb config
+kb init       # Run only when the database is not initialized
 ```
 
-## Commands
+Use `kb --help` and `kb <command> --help` as the source of truth for uncommon operations.
+
+## Search
+
+Search before writing to find prior solutions and avoid duplicate topics.
 
 ```bash
-kb list                          # List all entries
-kb add -t "Title" -c "Content"   # Create entry (first article)
-kb append --entry <id> -c "..." # Add article to entry
-kb append --entry-title "Title" -c "..."  # Append by title (creates entry if missing)
-kb get <entry-id>                # Get entry with all articles
-kb get --articles               # Include articles in list output
-kb search "query"               # Search articles (BM25 ranked)
-kb stats                         # Show entry/article counts
+kb search --top-k 5 "wrapper quoting"
+kb search --format json --top-k 5 "wrapper quoting"
+kb search --bm25-only "wrapper quoting"
 ```
 
-## Usage
+Use short FTS5-safe keywords. If a query fails with `fts5: syntax error near "?"`, remove punctuation or simplify it. Put the complete retrieval query in either the positional argument or `--prompt`; when both are present, `--prompt` wins.
+
+Use `--format json` when parsing results. Use `--bm25-only` to diagnose semantic-ranking problems.
+
+## Store
+
+Write multiline content to a file and pass `-f`. Reserve `-c` for short text.
 
 ```bash
-# Add session output
-cat session.log | kb add -t "Debug session $(date +%Y-%m-%d)"
+# Create a topic with its first article.
+kb entry create -t "Wrapper script quoting" \
+  --tags "bash,quoting" \
+  -f note.md
 
-# Append to existing entry
-kb append --entry 1 -c "Follow-up notes..."
-
-# Search for solutions
-kb search "flickering in scroll handler"
+# Add another searchable concern to the same topic.
+kb entry article add -t "Smoke-test procedure" \
+  -f smoke-test.md \
+  <entry-id>
 ```
 
-## Troubleshooting
+Use titles and opening lines that contain terms likely to be searched. Capture the entry and article IDs printed by each command.
 
-**"Error: no such module: fts5"** — Run `just kb-rebuild` to rebuild `kb` with FTS5 support.
+## Read and update
+
+```bash
+kb entry list --json --articles
+kb entry get --articles <entry-id>
+kb entry article list --json <entry-id>
+kb entry article get <entry-id> <article-id>
+kb entry update -t "New topic title" <entry-id>
+kb entry article update -t "New article title" -f revised.md \
+  <entry-id> <article-id>
+```
+
+Article updates replace the complete body. Read the current article first when any existing content must survive.
+
+## Attach assets
+
+```bash
+kb entry article asset add --json \
+  <entry-id> <article-id> path/to/file path/to/directory
+kb entry article asset list --json <entry-id> <article-id>
+kb entry article asset get --json <entry-id> <article-id> <asset-id>
+kb entry article asset delete --json <entry-id> <article-id> <asset-id>
+```
+
+Use `--overwrite` on `asset add` only when replacing a colliding logical path is intended.
+
+## Export and delete
+
+```bash
+kb export --all --dry-run -o export/
+kb export --all -o export/
+kb export --entry <entry-id> -o export/
+
+kb entry article delete <entry-id> <article-id>
+kb entry delete <entry-id>
+```
+
+Run export with `--dry-run` before writing. Entry and article deletion is permanent; an entry deletion also removes its articles, vectors, and assets. Keep the confirmation prompt unless non-interactive deletion was explicitly authorized.
+
+## Completion
+
+After every mutation:
+
+1. Verify the result with `entry get`, `article get`, `asset list`, or `search`.
+2. Report the affected IDs and any output path.
+3. Quote command errors exactly.
