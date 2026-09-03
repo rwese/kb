@@ -1,14 +1,14 @@
-# kb — Knowledgebase CLI
+# kb - Knowledgebase CLI
 
 A lightweight knowledgebase for the terminal. Keep notes on topics, grow them over time, attach files, and search everything in one place.
 
 ## Features
 
-- **Entries & articles** — a topic with a growing history of notes
-- **File attachments** — attach one titled file (script, archive, document) directly to an entry; keep screenshots, traces, or documents with the notes they belong to
-- **Full-text search** — fast keyword search over articles and attachment titles/filenames
-- **Semantic search** *(optional)* — find notes by meaning, not just keywords, via Ollama
-- **Obsidian export** — export everything as markdown at any time
+- **Entries & articles** - a topic with a growing history of notes
+- **File attachments** - attach one titled file (script, archive, document) directly to an entry; keep screenshots, traces, or documents with the notes they belong to
+- **Full-text search** - fast keyword search over articles and attachment titles/filenames
+- **Semantic search** *(optional)* - find notes by meaning, not just keywords, via Ollama
+- **Obsidian export** - export everything as markdown at any time
 
 ## Install
 
@@ -72,7 +72,7 @@ top_k: 5   # default number of search results
 
 ## Search
 
-`kb search <query>` finds articles by keyword, ranked by relevance. Results are grouped by entry and stay compact — the entry's id, title and tags, plus the matching articles. Attachment-only entries are found by attachment **title** or **file name** (binary contents are never indexed). No content is included by default:
+`kb search <query>` finds articles by keyword, ranked by relevance. Results are grouped by entry and stay compact - the entry's id, title and tags, plus the matching articles. Attachment-only entries are found by attachment **title** or **file name** (binary contents are never indexed). No content is included by default:
 
 ```
 ID: 2f018d, Title: Bug: List Flickering, Tags: ui,bug
@@ -134,8 +134,8 @@ description of the article's first paragraph, and the entry tags:
 ```markdown
 ## HTTP Cache Bug
 
-- [[http-cache-bug|HTTP Cache Bug]] — Steps to reproduce... #bug #cache
-- [[fix-details|Fix Details]] — Throttle with requestAnimationFrame. #bug #cache
+- [[http-cache-bug|HTTP Cache Bug]] - Steps to reproduce... #bug #cache
+- [[fix-details|Fix Details]] - Throttle with requestAnimationFrame. #bug #cache
 ```
 
 ## Command reference
@@ -169,7 +169,7 @@ Entry (a topic)                kb entry create
 └── Attachment                 kb entry attachment add (one file, titled)
 ```
 
-Entries get short ids (`2f018d`), articles get `entry-article` ids (`2f018d-273b00`), and attachments have six-character ids scoped to their entry — every attachment command takes the entry id first. Use these ids with any command, or look them up with `kb entry list`.
+Entries get short ids (`2f018d`), articles get `entry-article` ids (`2f018d-273b00`), and attachments have six-character ids scoped to their entry - every attachment command takes the entry id first. Use these ids with any command, or look them up with `kb entry list`.
 
 ## Deleting
 

@@ -324,8 +324,8 @@ func formatTags(tags []string) string {
 }
 
 // indexWikilink renders an Obsidian wikilink for a file relative to the vault
-// root (outputDir). Basenames are used when unique — matching Obsidian's own
-// resolution — and vault-relative paths otherwise, so links stay unambiguous
+// root (outputDir). Basenames are used when unique - matching Obsidian's own
+// resolution - and vault-relative paths otherwise, so links stay unambiguous
 // when two entries export files with the same basename.
 func indexWikilink(path, outputDir, display string, basenames map[string]int) string {
 	rel, err := filepath.Rel(outputDir, path)
@@ -422,7 +422,7 @@ func generateIndex(entries []exportItem, outputDir string, generatedAt time.Time
 	for _, ef := range all {
 		fmt.Fprintf(&b, "## %s\n\n", ef.title)
 		for _, f := range ef.files {
-			fmt.Fprintf(&b, "- %s — %s", indexWikilink(f.path, outputDir, f.heading, basenames), f.desc)
+			fmt.Fprintf(&b, "- %s - %s", indexWikilink(f.path, outputDir, f.heading, basenames), f.desc)
 			if f.tags != "" {
 				fmt.Fprintf(&b, " %s", f.tags)
 			}

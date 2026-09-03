@@ -190,13 +190,13 @@ Export preserves regular permission bits. `--dry-run` lists every attachment des
 
 ## Implementation plan
 
-- `2026-09-03-EWRPBIYE-ZACMT` — Add the attachment schema, model, CRUD, FTS metadata index, statistics, and database tests in `internal/db/`.
-- `2026-09-03-EWRPBJTG-ZACMT` — Generalize managed-file staging/copy/export helpers while preserving article asset behavior; add permission and file-type tests in `internal/assets/`.
-- `2026-09-03-EWRPBJTM-ZACMT` — Add `kb entry attachment add|list|get|update|delete` and hermetic CLI tests in `cmd/`.
-- `2026-09-03-EWRPBJTP-ZACMT` — Integrate attachments into entry views, timestamps, counts, status, and entry deletion cleanup.
-- `2026-09-03-EWRPBJTR-ZACMT` — Add typed attachment metadata hits to search and preserve article ranking compatibility.
-- `2026-09-03-EWRPBJTT-ZACMT` — Extend export, dry-run, permission preservation, and `docs/prds/export/README.md`.
-- `2026-09-03-EWRPBJTV-ZACMT` — Update `README.md`, `DEVELOPMENT.md`, `AGENTS.md`, and `skills/knowledgebase/SKILL.md`; run all quality gates.
+- `2026-09-03-EWRPBIYE-ZACMT` - Add the attachment schema, model, CRUD, FTS metadata index, statistics, and database tests in `internal/db/`.
+- `2026-09-03-EWRPBJTG-ZACMT` - Generalize managed-file staging/copy/export helpers while preserving article asset behavior; add permission and file-type tests in `internal/assets/`.
+- `2026-09-03-EWRPBJTM-ZACMT` - Add `kb entry attachment add|list|get|update|delete` and hermetic CLI tests in `cmd/`.
+- `2026-09-03-EWRPBJTP-ZACMT` - Integrate attachments into entry views, timestamps, counts, status, and entry deletion cleanup.
+- `2026-09-03-EWRPBJTR-ZACMT` - Add typed attachment metadata hits to search and preserve article ranking compatibility.
+- `2026-09-03-EWRPBJTT-ZACMT` - Extend export, dry-run, permission preservation, and `docs/prds/export/README.md`.
+- `2026-09-03-EWRPBJTV-ZACMT` - Update `README.md`, `DEVELOPMENT.md`, `AGENTS.md`, and `skills/knowledgebase/SKILL.md`; run all quality gates.
 
 ## Quality gates
 

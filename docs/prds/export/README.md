@@ -119,25 +119,25 @@ Exported 3 entries from kb on 2026-05-20.
 
 ## HTTP Cache Bug
 
-- [[http-cache-bug|HTTP Cache Bug]] — Steps to reproduce... #bug #cache
-- [[fix-details|Fix Details]] — Throttle with requestAnimationFrame. #bug #cache
+- [[http-cache-bug|HTTP Cache Bug]] - Steps to reproduce... #bug #cache
+- [[fix-details|Fix Details]] - Throttle with requestAnimationFrame. #bug #cache
 
 ## Linux Helper
 
-- [[linux-helper|Linux Helper]] — *No content*
+- [[linux-helper|Linux Helper]] - *No content*
 ```
 
 Per file the index lists:
 
-- **Link** — an Obsidian wikilink. The file basename is used when it is unique
+- **Link** - an Obsidian wikilink. The file basename is used when it is unique
   in the vault (matching Obsidian's own resolution); otherwise the
   vault-relative path disambiguates, e.g. `[[my-note-2f018d/my-note|My Note]]`.
-- **Heading** — the `#` heading of the exported file: the entry title for the
+- **Heading** - the `#` heading of the exported file: the entry title for the
   primary file, the article title for additional article files.
-- **Short description** — the article's first paragraph with markdown stripped
+- **Short description** - the article's first paragraph with markdown stripped
   (links become their text), truncated to 160 characters. Entries without
   articles show `*No content*`.
-- **Tags** — the entry's tags in Obsidian tag syntax (`#bug #cache`), inherited
+- **Tags** - the entry's tags in Obsidian tag syntax (`#bug #cache`), inherited
   by every file of the entry.
 
 Entries are sorted by title. The index has no `kb_id`, so re-import into kb

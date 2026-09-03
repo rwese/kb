@@ -1,12 +1,12 @@
-# kb — Development
+# kb - Development
 
 How to build, test, and extend the kb CLI.
 
 ## Prerequisites
 
 - Go 1.22+
-- A C compiler (CGO) — the SQLite driver compiles C code
-- SQLite with FTS5 — enabled at compile time via `SQLITE_ENABLE_FTS5` (pre-installed on macOS; on Linux install `libsqlite3-dev`)
+- A C compiler (CGO) - the SQLite driver compiles C code
+- SQLite with FTS5 - enabled at compile time via `SQLITE_ENABLE_FTS5` (pre-installed on macOS; on Linux install `libsqlite3-dev`)
 
 FTS5 is required at **runtime**: the schema creates an `articles_fts` virtual table. Builds or tests without the FTS5 define compile but fail when the database schema is created.
 
@@ -16,7 +16,7 @@ FTS5 is required at **runtime**: the schema creates an `articles_fts` virtual ta
 # Build
 CGO_CFLAGS="-DSQLITE_ENABLE_FTS5" go build -tags sqlite_fts5 -o bin/kb .
 
-# Test — the same CGO flags are required
+# Test - the same CGO flags are required
 CGO_CFLAGS="-DSQLITE_ENABLE_FTS5" go test ./...
 ```
 
@@ -103,12 +103,12 @@ Tests never touch a real knowledgebase. `setupTempKBTestEnv` (in `cmd/test_helpe
 
 ### Attachment model
 
-`attachment add` copies **exactly one regular file** into KB-owned storage under `<assets_path>/entries/<entryID>/attachments/<attachmentID>/<file name>` — a namespace separate from article assets. Directories, symlinks, sockets, devices, and named pipes are rejected; the title is trimmed and must be non-empty; SHA-256, byte size, and regular permission bits (including the executable bit; special bits stripped) are recorded. The file is treated as opaque untrusted bytes: never inspected, sourced, or executed. Replacement and deletion stage new bytes before the metadata commit and return an explicit partial-failure error when the old stored bytes cannot be removed.
+`attachment add` copies **exactly one regular file** into KB-owned storage under `<assets_path>/entries/<entryID>/attachments/<attachmentID>/<file name>` - a namespace separate from article assets. Directories, symlinks, sockets, devices, and named pipes are rejected; the title is trimmed and must be non-empty; SHA-256, byte size, and regular permission bits (including the executable bit; special bits stripped) are recorded. The file is treated as opaque untrusted bytes: never inspected, sourced, or executed. Replacement and deletion stage new bytes before the metadata commit and return an explicit partial-failure error when the old stored bytes cannot be removed.
 
 ### Ranking (current implementation)
 
 1. BM25 search over the article FTS index and the attachment metadata FTS index (`top_k * 2` candidates each). Article hits keep the current BM25 pipeline; attachment hits rank on title + file name only (binary contents are never indexed).
-2. Each candidate set is normalized to 0–1 separately at the database layer before merging — raw BM25 values from separate FTS tables are not directly comparable.
+2. Each candidate set is normalized to 0–1 separately at the database layer before merging - raw BM25 values from separate FTS tables are not directly comparable.
 3. If an embedder is configured and `--bm25-only` is not set, embed the query and re-rank **article hits only** (attachment hits keep their normalized BM25 score): BM25 scores are normalized to 0–1 and blended with the query-vector similarity at a fixed 0.3/0.7 BM25/semantic split (`search.DefaultRanker`).
 4. `--prompt` text is used as the query (falls back to the positional arg). The `--context`/`--context-file` flags exist but are currently unused.
 

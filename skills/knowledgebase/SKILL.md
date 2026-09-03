@@ -98,7 +98,7 @@ kb entry attachment update --title "New title" --file path/to/replacement \
 kb entry attachment delete --force <entry-id> <attachment-id>
 ```
 
-`attachment add` accepts exactly one regular file; directories, symlinks, and special files are rejected, so add attachments for single files only. Attachment IDs are six characters and entry-scoped — always pass the entry ID first.
+`attachment add` accepts exactly one regular file; directories, symlinks, and special files are rejected, so add attachments for single files only. Attachment IDs are six characters and entry-scoped - always pass the entry ID first.
 
 ## Export and delete
 
@@ -115,7 +115,7 @@ Run export with `--dry-run` before writing. Pass `--with-attachments` to also
 export entry attachments into an `attachments/` subdirectory of each entry
 (markdown-only exports omit them entirely). Every export run writes an Obsidian
 `INDEX.md` at the output root with one section per entry and, per exported file,
-a wikilink, heading, short description, and the entry tags — open it to browse
+a wikilink, heading, short description, and the entry tags - open it to browse
 the vault. Entry and article deletion is permanent; an entry deletion also removes its articles, vectors, article assets, and attachments. Keep the confirmation prompt unless non-interactive deletion was explicitly authorized; with `--force`, missing entry IDs are skipped and the remaining entries are still deleted.
 
 ## Completion

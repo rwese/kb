@@ -286,7 +286,7 @@ func TestGenerateIndexProducesBrowsableObsidianIndex(t *testing.T) {
 	}
 
 	// Attachment-only entry without articles.
-	if !strings.Contains(content, "[[linux-helper|Linux Helper]] — *No content*") {
+	if !strings.Contains(content, "[[linux-helper|Linux Helper]] - *No content*") {
 		t.Fatalf("missing attachment-only entry line:\n%s", content)
 	}
 }
