@@ -6,12 +6,15 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-type Commands struct{}
+type Commands struct {
+	Version string
+}
 
 func (c *Commands) Run(ctx context.Context, args []string) error {
 	cmd := &cli.Command{
-		Name:  "kb",
-		Usage: "Knowledgebase CLI with weighted retrieval",
+		Name:    "kb",
+		Usage:   "Knowledgebase CLI with weighted retrieval",
+		Version: c.Version,
 		Commands: []*cli.Command{
 
 			c.status(),

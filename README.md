@@ -108,6 +108,7 @@ out/http-cache-bug/assets/2f018d-273b00/trace.har
 | `kb status` | Validate installation and database |
 | `kb stats` | Database statistics |
 | `kb export` | Export to markdown |
+| `kb --version` | Print the installed version |
 
 Use `kb <command> --help` for full options on any command.
 
