@@ -65,34 +65,15 @@ func (c *Commands) search() *cli.Command {
 				return nil
 			}
 
-			// Try hybrid search if embeddings are available
-			if !cmd.Bool("bm25-only") && (cfg.Embedder == "local" || cfg.Embedder == "ollama") {
+			// Try hybrid search if ollama embeddings are available
+			if !cmd.Bool("bm25-only") && cfg.Embedder == "ollama" {
 				e := embed.NewEmbedder(cfg)
-
-				// Check if local embedder is ready
-				if cfg.Embedder == "local" {
-					le, ok := e.(*embed.LocalEmbedder)
-					if ok && !le.IsAvailable() {
-						// Local embedder not ready, skip semantic search
-						return formatSearchResults(results[:min(len(results), topK)], cmd.String("format"), cmd.Bool("bm25-only"))
-					}
-				}
 
 				// Compute query embedding
 				queryEmb, err := e.Embed(ctx, query)
 				if err == nil && queryEmb != nil {
 					// Apply hybrid ranking
-					bm25Weight := cfg.Local.BM25Weight
-					semanticWeight := cfg.Local.SemanticWeight
-
-					// Ensure weights sum to 1
-					total := bm25Weight + semanticWeight
-					if total > 0 {
-						bm25Weight /= total
-						semanticWeight /= total
-					}
-
-					ranker := search.NewRanker(bm25Weight, semanticWeight)
+					ranker := search.DefaultRanker()
 					results = ranker.HybridSearch(ctx, results, database, queryEmb)
 				}
 			}

@@ -6,9 +6,6 @@ import (
 	"github.com/rwese/kb/internal/config"
 )
 
-// Dimension returns embedding vector size for all supported models
-const DefaultDimension = 384
-
 // Embedder interface for semantic similarity
 type Embedder interface {
 	Embed(ctx context.Context, text string) ([]float32, error)
@@ -23,16 +20,6 @@ type EmbedderFactory struct {
 // NewEmbedder creates an embedder based on config
 func NewEmbedder(cfg *config.Config) Embedder {
 	switch cfg.Embedder {
-	case "local":
-		le, err := NewLocalEmbedder(&cfg.Local)
-		if err != nil || le.ErrorMessage() != "" {
-			// If local fails, log warning and fall back to none
-			if le != nil && le.ErrorMessage() != "" {
-				// Log warning but continue with NoneEmbedder
-				return &NoneEmbedder{}
-			}
-		}
-		return le
 	case "ollama":
 		return NewOllamaEmbedder(cfg.Ollama.Model, cfg.Ollama.BaseURL)
 	default:

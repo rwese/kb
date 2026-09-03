@@ -92,16 +92,7 @@ func (c *Commands) entryCreate() *cli.Command {
 
 				// Compute and store embedding if embedder is available
 				e := embed.NewEmbedder(cfg)
-				if cfg.Embedder == "local" || cfg.Embedder == "ollama" {
-					// For local embedder, check if assets are available
-					if cfg.Embedder == "local" {
-						le, ok := e.(*embed.LocalEmbedder)
-						if ok && !le.IsAvailable() {
-							fmt.Printf("Created entry %s with article %s (no embedding)\n", entryID, articleID)
-							return nil
-						}
-					}
-
+				if cfg.Embedder == "ollama" {
 					// Compute embedding
 					emb, err := e.Embed(ctx, content)
 					if err != nil {
@@ -111,7 +102,7 @@ func (c *Commands) entryCreate() *cli.Command {
 					}
 
 					if emb != nil {
-						if err := database.SaveVector(articleID, emb, cfg.Local.Model); err != nil {
+						if err := database.SaveVector(articleID, emb, cfg.Ollama.Model); err != nil {
 							fmt.Printf("Warning: failed to store embedding: %v\n", err)
 						}
 					}

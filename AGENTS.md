@@ -40,7 +40,7 @@ Done when gofmt reports no changes, golangci-lint passes, and `go test ./...` is
 | `cmd/` | CLI commands (urfave/cli/v3) + integration tests |
 | `internal/db/` | SQLite: entries, articles, assets, FTS index, vectors |
 | `internal/search/` | BM25 + hybrid ranking |
-| `internal/embed/` | embedding providers: ollama, local |
+| `internal/embed/` | embedding provider: ollama |
 | `internal/assets/` | asset copies, staging, cleanup |
 | `internal/config/` | config discovery + defaults |
 | `internal/id/` | id generation |

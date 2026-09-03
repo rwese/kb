@@ -22,7 +22,6 @@ func (c *Commands) Run(ctx context.Context, args []string) error {
 			c.config(),
 			c.search(),
 			c.stats(),
-			c.download(),
 			c.export(),
 			c.deleteCmd(),
 			c.entryCmd(),

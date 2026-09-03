@@ -53,11 +53,11 @@ CGO_CFLAGS="-DSQLITE_ENABLE_FTS5" go test ./...
 | `cmd/*_test.go` | CLI-level integration tests (hermetic, see below) |
 | `internal/db/` | SQLite storage: entries, articles, assets, FTS index, vectors |
 | `internal/search/` | BM25 and hybrid ranking (`ranker.go`) |
-| `internal/embed/` | embedding providers: `ollama.go` (server) and `local.go` (bundled model) |
+| `internal/embed/` | embedding providers: `ollama.go` (server) |
 | `internal/assets/` | asset import/staging/cleanup (KB-owned copies) |
 | `internal/id/` | id generation (6 hex chars) |
 | `internal/config/` | config discovery, defaults, `~` expansion |
-| `docs/prds/` | feature specifications (export, local embeddings) |
+| `docs/prds/` | feature specifications (export) |
 | `skills/knowledgebase/` | the user-facing agent skill shipped with the repo |
 
 ## CLI surface
@@ -72,7 +72,6 @@ kb
 │           └── add | list | get | delete         # attached files
 ├── search        # weighted retrieval (see Ranking)
 ├── export        # Obsidian markdown
-├── download      # fetch local embedding model
 ├── init | status | stats | config                # database & install
 └── delete entry  # alias for `entry delete`
 ```
@@ -102,10 +101,10 @@ Tests never touch a real knowledgebase. `setupTempKBTestEnv` (in `cmd/test_helpe
 ### Ranking (current implementation)
 
 1. BM25 search over the FTS index (`top_k * 2` candidates).
-2. If an embedder is configured and `--bm25-only` is not set, embed the query and re-rank: BM25 scores are normalized to 0–1 and blended with the query-vector similarity using `bm25_weight` (default 0.3) and `semantic_weight` (default 0.7) from the `local:` config block; weights are normalized to sum to 1.
+2. If an embedder is configured and `--bm25-only` is not set, embed the query and re-rank: BM25 scores are normalized to 0–1 and blended with the query-vector similarity at a fixed 0.3/0.7 BM25/semantic split (`search.DefaultRanker`).
 3. `--prompt` text is used as the query (falls back to the positional arg). The `--context`/`--context-file` flags exist but are currently unused. 
 
-If no query embedding is available (e.g. the local model is not downloaded), search falls back to BM25 results only.
+If no query embedding is available, search falls back to BM25 results only.
 
 ## Writing tests
 

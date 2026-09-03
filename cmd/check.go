@@ -7,7 +7,6 @@ import (
 
 	"github.com/rwese/kb/internal/config"
 	"github.com/rwese/kb/internal/db"
-	"github.com/rwese/kb/internal/embed"
 	"github.com/urfave/cli/v3"
 )
 
@@ -105,17 +104,6 @@ func (c *Commands) status() *cli.Command {
 			// Check embedder status
 			fmt.Println()
 			switch cfg.Embedder {
-			case "local":
-				fmt.Printf("Embedder: local (%s)\n", cfg.Local.Model)
-				ok, msg := embed.CheckAssets(cfg.Local.CacheDir)
-				if ok {
-					fmt.Printf("✓ Library: %s\n", embed.LibraryFileFromCache(cfg.Local.CacheDir))
-					fmt.Printf("✓ Model:   %s\n", embed.ModelFileFromCache(cfg.Local.CacheDir))
-				} else {
-					fmt.Printf("✗ Assets: %s\n", msg)
-					fmt.Println("  Run 'kb download' to fetch assets")
-					errors++
-				}
 			case "ollama":
 				fmt.Printf("Embedder: ollama (%s)\n", cfg.Ollama.Model)
 				fmt.Printf("Base URL: %s\n", cfg.Ollama.BaseURL)

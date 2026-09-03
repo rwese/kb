@@ -7,7 +7,7 @@ A lightweight knowledgebase for the terminal. Keep notes on topics, grow them ov
 - **Entries & articles** — a topic with a growing history of notes
 - **File attachments** — keep screenshots, traces, or documents with the notes they belong to
 - **Full-text search** — fast keyword search over everything you stored
-- **Semantic search** *(optional)* — find notes by meaning, not just keywords, via Ollama or a bundled local model
+- **Semantic search** *(optional)* — find notes by meaning, not just keywords, via Ollama
 - **Obsidian export** — export everything as markdown at any time
 
 ## Install
@@ -76,7 +76,6 @@ kb search --prompt "I am fixing the flickering list"
 Keyword search matches what you write, not what you mean. For meaning-based search, set an embedder in the config:
 
 - **Ollama**: `embedder: ollama` with a model served locally (e.g. `nomic-embed-text`)
-- **Bundled local model**: run `kb download` once, then set `embedder: local` — no server needed
 
 With an embedder configured, search blends keyword and semantic ranking.
 
