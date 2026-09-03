@@ -47,7 +47,8 @@ func (c *Commands) entryArticleAdd() *cli.Command {
 			}
 
 			// Get content from args, file, stdin, or flag
-			var content, title string
+			var content string
+			title := cmd.String("title")
 
 			if cmd.Args().Len() > 1 {
 				content = cmd.Args().Slice()[1]
@@ -57,7 +58,6 @@ func (c *Commands) entryArticleAdd() *cli.Command {
 					return err
 				}
 				content = string(data)
-				title = cmd.String("title")
 				if title == "" {
 					title = f
 				}
@@ -70,8 +70,6 @@ func (c *Commands) entryArticleAdd() *cli.Command {
 			} else {
 				content = cmd.String("content")
 			}
-
-			title = cmd.String("title")
 
 			if content == "" {
 				return fmt.Errorf("content required")
