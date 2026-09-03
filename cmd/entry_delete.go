@@ -57,7 +57,10 @@ func deleteEntry(database *db.DB, assetsPath, id string, force bool) error {
 	if !force {
 		fmt.Printf("Delete entry %s and all its articles? [y/N] ", id)
 		var response string
-		fmt.Scanln(&response)
+		if _, err := fmt.Scanln(&response); err != nil && response == "" {
+			// EOF / empty input counts as "no"
+			response = "n"
+		}
 		if response != "y" && response != "Y" {
 			fmt.Printf("Skipped entry %s\n", id)
 			return nil
@@ -65,9 +68,14 @@ func deleteEntry(database *db.DB, assetsPath, id string, force bool) error {
 	}
 
 	// Delete all articles first (to clean up vectors)
-	articles, _ := database.GetArticles(id)
+	articles, err := database.GetArticles(id)
+	if err != nil {
+		return fmt.Errorf("failed to list articles for %s: %w", id, err)
+	}
 	for _, a := range articles {
-		database.DeleteVector(a.ID)
+		if err := database.DeleteVector(a.ID); err != nil {
+			return fmt.Errorf("failed to delete vector for %s: %w", a.ID, err)
+		}
 	}
 
 	// Delete entry (articles cascade)

@@ -52,7 +52,10 @@ func (c *Commands) entryArticleDelete() *cli.Command {
 			if !cmd.Bool("force") {
 				fmt.Printf("Delete article %s from entry %s? [y/N] ", articleID, entryID)
 				var response string
-				fmt.Scanln(&response)
+				if _, err := fmt.Scanln(&response); err != nil && response == "" {
+					// EOF / empty input counts as "no"
+					response = "n"
+				}
 				if response != "y" && response != "Y" {
 					fmt.Println("Aborted")
 					return nil
@@ -60,7 +63,9 @@ func (c *Commands) entryArticleDelete() *cli.Command {
 			}
 
 			// Delete vector
-			database.DeleteVector(articleID)
+			if err := database.DeleteVector(articleID); err != nil {
+				return fmt.Errorf("failed to delete vector for %s: %w", articleID, err)
+			}
 
 			// Delete article
 			if err := database.DeleteArticle(articleID); err != nil {
