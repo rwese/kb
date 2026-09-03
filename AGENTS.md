@@ -1,89 +1,61 @@
 # KB Agent Configuration
 
-## Project Overview
+Knowledgebase CLI in Go: entries (topics) with articles (notes) and assets (files), SQLite+FTS5 storage, weighted retrieval.
 
-Knowledgebase CLI with SQLite+FTS5 and weighted retrieval for AI agents.
+## Workflow
 
-## Build
+### 1. Build — FTS5 flags on every compile
+
+The schema uses `fts5`, so a build or test without the FTS5 define compiles but dies at runtime. Always pass both:
 
 ```bash
-# Requires CGO for SQLite FTS5
 CGO_CFLAGS="-DSQLITE_ENABLE_FTS5" go build -tags sqlite_fts5 -o bin/kb .
 ```
 
-## Test
+Done when `bin/kb status` exits 0.
+
+### 2. Test — same flags, hermetic env
 
 ```bash
 CGO_CFLAGS="-DSQLITE_ENABLE_FTS5" go test ./...
 ```
 
-## IDs
+Done when every package reports `ok`.
 
-String-based IDs (6 hex chars, collision-resistant):
-- Entries: `2f018d`
-- Articles: `2f018d-273b00` (entry hash + article hash)
+Tests are hermetic: `setupTempKBTestEnv` (in `cmd/test_helpers_test.go`) points the CLI at a `t.TempDir()` via `KB_PATH` and `HOME` overrides. New tests that touch the database or assets follow that pattern — set up an isolated env like it, never hit a real knowledgebase.
 
-Auto-detected: IDs with `-` are articles, without are entries.
+### 3. Green gate
 
-## Commands
-
-### Entry Management
-
-| Command | Usage | Description |
-|---------|-------|-------------|
-| `entry create` | `-t <title> [-c <content>] [-f <file>] [--tags <tags>]` | Create entry (with optional initial article) |
-| `entry list` | `[--json] [--articles] [--all]` | List all entries |
-| `entry get` | `<id>` | Get entry by ID |
-| `entry update` | `<id>` | Update an entry |
-| `entry delete` | `<id> [id...] [--force]` | Delete one or more entries and all their articles |
-
-### Article Management
-
-| Command | Usage | Description |
-|---------|-------|-------------|
-| `entry article list` | `<entry-id>` | List articles in an entry |
-| `entry article add` | `<entry-id> [content]` | Add article to entry |
-| `entry article get` | `<entry-id> <article-id>` | Get article by ID |
-| `entry article update` | `<article-id>` | Update an article |
-| `entry article delete` | `<entry-id> <article-id>` | Delete article from entry |
-
-### Article Asset Management
-
-| Command | Usage | Description |
-|---------|-------|-------------|
-| `entry article asset add` | `<entry-id> <article-id> <path>... [--overwrite] [--json]` | Import files or directories as KB-owned article assets |
-| `entry article asset list` | `<entry-id> <article-id> [--json]` | List assets attached to an article |
-| `entry article asset get` | `<entry-id> <article-id> <asset-id> [--json]` | Show metadata for one asset |
-| `entry article asset delete` | `<entry-id> <article-id> <asset-id> [--json]` | Delete one attached asset |
-
-### Search & Utility
-
-| Command | Usage | Description |
-|---------|-------|-------------|
-| `search` | `[--context <text>] [--context-file <file>] [--prompt <text>] [--top-k <n>] [--format <fmt>] [--all] [--bm25-only]` | Weighted full-text search |
-| `status` | | Validate installation and database |
-| `init` | | Initialize database |
-| `config` | | Show current config |
-| `stats` | | Show database statistics |
-| `export` | `[-o <dir>] [-e <id>] [--all] [--force] [--dry-run]` | Export to Obsidian markdown |
-| `download` | `[-f] [-v]` | Download embedding assets |
-
-## Config
-
-`~/.config/kb/config.yaml`:
-```yaml
-db_path: ~/.local/share/kb/knowledgebase.db
-assets_path: ~/.local/share/kb/assets
-embedder: none  # or "ollama"
-ollama:
-  model: nomic-embed-text
-  base_url: http://localhost:11434
-top_k: 5
+```bash
+export CGO_CFLAGS="-DSQLITE_ENABLE_FTS5"
+just check    # fmt + lint + test (needs golangci-lint installed)
 ```
 
-## Tech Stack
+Done when gofmt reports no changes, golangci-lint passes, and `go test ./...` is green.
 
-- Go 1.22+
-- SQLite + FTS5
-- urfave/cli/v3
-- Ollama (optional)
+## Project map
+
+| Path | Role |
+|------|------|
+| `cmd/` | CLI commands (urfave/cli/v3) + integration tests |
+| `internal/db/` | SQLite: entries, articles, assets, FTS index, vectors |
+| `internal/search/` | BM25 + hybrid ranking |
+| `internal/embed/` | embedding providers: ollama, local |
+| `internal/assets/` | asset copies, staging, cleanup |
+| `internal/config/` | config discovery + defaults |
+| `internal/id/` | id generation |
+| `docs/prds/` | behavior specs — keep in step with code |
+
+## Conventions
+
+- **IDs**: 6 hex chars. A `-` in an id means article (`2f018d-273b00`); without is an entry.
+- **Config order**: `$KB_PATH` → `~/.config/kb/config.yaml` → `.kb.yaml` → defaults.
+- **Assets**: `asset add` copies files into KB-owned storage; symlinks are rejected, a logical-path collision needs `--overwrite`.
+- **CLI reference**: read `kb <command> --help` for flags — commands change faster than docs. The command tree plus build/release details live in DEVELOPMENT.md; the user-facing command table in README.md.
+
+## References
+
+- `DEVELOPMENT.md` — build, release, gotchas, ranking internals
+- `README.md` — user-facing docs
+- `docs/prds/*.md` — feature specs; update with behavior changes
+- `skills/knowledgebase/SKILL.md` — user-facing agent skill; update with behavior changes
