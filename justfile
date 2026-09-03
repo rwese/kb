@@ -2,6 +2,7 @@
 
 set shell := ["bash", "-cu"]
 set export := true
+set default-list
 
 # Build variables
 BIN := "bin/kb"
