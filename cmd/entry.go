@@ -16,6 +16,7 @@ func (c *Commands) entryCmd() *cli.Command {
 			c.entryUpdate(),
 			c.entryDelete(),
 			c.entryArticleCmd(),
+			c.entryAttachmentCmd(),
 		},
 	}
 }
