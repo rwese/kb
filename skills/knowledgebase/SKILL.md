@@ -111,7 +111,7 @@ kb entry article delete <entry-id> <article-id>
 kb entry delete <entry-id>
 ```
 
-Run export with `--dry-run` before writing. Entry and article deletion is permanent; an entry deletion also removes its articles, vectors, article assets, and attachments. Keep the confirmation prompt unless non-interactive deletion was explicitly authorized.
+Run export with `--dry-run` before writing. Entry and article deletion is permanent; an entry deletion also removes its articles, vectors, article assets, and attachments. Keep the confirmation prompt unless non-interactive deletion was explicitly authorized; with `--force`, missing entry IDs are skipped and the remaining entries are still deleted.
 
 ## Completion
 

@@ -158,6 +158,8 @@ Entries get short ids (`2f018d`), articles get `entry-article` ids (`2f018d-273b
 kb entry delete 2f018d a1b2c3    # removes entries together with their articles
 ```
 
+`kb entry delete` asks for confirmation unless `--force` (`-f`) is given. With `--force`, IDs that do not exist are skipped and the remaining entries are still deleted.
+
 ## Building from source
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for build, test, and contribution details.
