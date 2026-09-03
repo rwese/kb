@@ -47,8 +47,11 @@ func (c *Commands) stats() *cli.Command {
 			fmt.Printf("- Active: %d\n", stats.ActiveArticles)
 			fmt.Printf("- Deleted: %d\n\n", stats.DeletedArticles)
 
-			fmt.Println("## Assets")
+			fmt.Println("## Article assets")
 			fmt.Printf("- Total: %d\n\n", stats.TotalAssets)
+
+			fmt.Println("## Attachments")
+			fmt.Printf("- Total: %d\n\n", stats.TotalAttachments)
 
 			fmt.Println("## History")
 			fmt.Printf("- Total: %d\n", stats.TotalHistory)

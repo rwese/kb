@@ -87,6 +87,10 @@ func deleteEntry(database *db.DB, assetsPath, id string, force bool) error {
 			return fmt.Errorf("entry %s deleted but failed to remove asset store for article %s: %w", id, article.ID, err)
 		}
 	}
+	// Entry attachment rows cascade with the entry; remove their stored bytes.
+	if err := assetstore.RemoveEntryAttachmentsTree(assetsPath, id); err != nil {
+		return fmt.Errorf("entry %s deleted but failed to remove attachment store: %w", id, err)
+	}
 
 	fmt.Printf("Deleted entry %s\n", id)
 	return nil

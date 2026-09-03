@@ -71,7 +71,15 @@ func (c *Commands) status() *cli.Command {
 						fmt.Println("✗ Failed to query assets:", err)
 						errors++
 					} else {
-						fmt.Printf("✓ Assets table: %d assets\n", assetCount)
+						fmt.Printf("✓ Article assets table: %d assets\n", assetCount)
+					}
+
+					attachmentCount, err := database.AttachmentCount()
+					if err != nil {
+						fmt.Println("✗ Failed to query attachments:", err)
+						errors++
+					} else {
+						fmt.Printf("✓ Attachments table: %d attachments\n", attachmentCount)
 					}
 
 					// Test search

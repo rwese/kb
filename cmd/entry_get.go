@@ -21,6 +21,7 @@ func (c *Commands) entryGet() *cli.Command {
 			&cli.BoolFlag{Name: "json", Usage: "Output as JSON"},
 			&cli.BoolFlag{Name: "all", Usage: "Include deleted entries"},
 			&cli.BoolFlag{Name: "articles", Aliases: []string{"a"}, Usage: "Include articles"},
+			&cli.BoolFlag{Name: "attachments", Usage: "Include attachments"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			cfg, err := config.Discover()
@@ -64,20 +65,48 @@ func (c *Commands) entryGet() *cli.Command {
 				return fmt.Errorf("entry not found: %w", err)
 			}
 
-			// Show articles only with --articles flag
-			if cmd.Bool("articles") {
-				articles, err := database.GetArticlesWithDeleted(id, includeDeleted)
-				if err != nil {
-					return err
-				}
-				views, err := loadArticleViews(database, articles)
-				if err != nil {
-					return err
-				}
-				return printEntryWithArticles(entry, views, asJSON)
+			showArticles := cmd.Bool("articles")
+			showAttachments := cmd.Bool("attachments")
+			if !showArticles && !showAttachments {
+				return printEntry(entry, asJSON)
 			}
 
-			return printEntry(entry, asJSON)
+			var articles []articleView
+			if showArticles {
+				articleList, err := database.GetArticlesWithDeleted(id, includeDeleted)
+				if err != nil {
+					return err
+				}
+				articles, err = loadArticleViews(database, articleList)
+				if err != nil {
+					return err
+				}
+			}
+
+			var attachments []db.EntryAttachment
+			if showAttachments {
+				attachments, err = database.ListEntryAttachments(id)
+				if err != nil {
+					return err
+				}
+			}
+
+			if asJSON {
+				switch {
+				case showArticles && showAttachments:
+					return formatJSONCmd(entryWithArticlesAndAttachments{Entry: *entry, Articles: articles, Attachments: attachments})
+				case showArticles:
+					return formatJSONCmd(entryWithArticleViews{Entry: *entry, Articles: articles})
+				default:
+					return formatJSONCmd(entryWithAttachments{Entry: *entry, Attachments: attachments})
+				}
+			}
+
+			if err := printEntryWithArticles(entry, articles, asJSON); err != nil {
+				return err
+			}
+			printAttachmentsSection(attachments)
+			return nil
 		},
 	}
 }

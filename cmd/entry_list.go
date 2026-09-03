@@ -44,25 +44,33 @@ func (c *Commands) entryList() *cli.Command {
 			}
 
 			if cmd.Bool("json") {
-				var result []entryWithArticleViews
+				var result []entryWithArticlesAndAttachments
 				for _, e := range entries {
 					articles, _ := database.GetArticles(e.ID)
 					views, err := loadArticleViews(database, articles)
 					if err != nil {
 						return err
 					}
-					result = append(result, entryWithArticleViews{Entry: e, Articles: views})
+					attachments, err := database.ListEntryAttachments(e.ID)
+					if err != nil {
+						return err
+					}
+					result = append(result, entryWithArticlesAndAttachments{Entry: e, Articles: views, Attachments: attachments})
 				}
 				return formatJSON(result)
 			}
 
 			// Markdown table as default
-			fmt.Println("| ID | Title | Tags | Articles | Updated |")
-			fmt.Println("|----|-------|------|----------|---------|")
+			fmt.Println("| ID | Title | Tags | Articles | Attachments | Updated |")
+			fmt.Println("|----|-------|------|----------|-------------|---------|")
 			for _, e := range entries {
 				articles, _ := database.GetArticles(e.ID)
-				fmt.Printf("| %s | %s | %s | %d | %s |\n",
-					e.ID, e.Title, e.Tags, len(articles), e.UpdatedAt)
+				attachments, err := database.ListEntryAttachments(e.ID)
+				if err != nil {
+					return err
+				}
+				fmt.Printf("| %s | %s | %s | %d | %d | %s |\n",
+					e.ID, e.Title, e.Tags, len(articles), len(attachments), e.UpdatedAt)
 			}
 
 			return nil

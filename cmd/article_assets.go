@@ -19,6 +19,17 @@ type entryWithArticleViews struct {
 	Articles []articleView `json:"articles"`
 }
 
+type entryWithAttachments struct {
+	db.Entry
+	Attachments []db.EntryAttachment `json:"attachments"`
+}
+
+type entryWithArticlesAndAttachments struct {
+	db.Entry
+	Articles    []articleView        `json:"articles"`
+	Attachments []db.EntryAttachment `json:"attachments"`
+}
+
 func loadArticleView(database *db.DB, article *db.Article) (articleView, error) {
 	assetList, err := database.ListArticleAssets(article.ID)
 	if err != nil {
@@ -50,6 +61,18 @@ func printAssetsSection(assetList []db.ArticleAsset) {
 	fmt.Printf("## Assets\n\n")
 	for _, asset := range assetList {
 		fmt.Printf("- %s (%s, %s)\n", asset.LogicalPath, assets.FormatSize(asset.SizeBytes), asset.ID)
+	}
+	fmt.Println()
+}
+
+func printAttachmentsSection(attachmentList []db.EntryAttachment) {
+	if len(attachmentList) == 0 {
+		return
+	}
+
+	fmt.Printf("## Attachments\n\n")
+	for _, att := range attachmentList {
+		fmt.Printf("- %s (%s, %s, %s)\n", att.Title, att.FileName, assets.FormatSize(att.SizeBytes), att.ID)
 	}
 	fmt.Println()
 }
