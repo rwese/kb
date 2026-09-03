@@ -12,25 +12,29 @@ A lightweight knowledgebase for the terminal. Keep notes on topics, grow them ov
 
 ## Install
 
-### Prebuilt (recommended)
+### Agentic install
 
-Download the latest binary for your platform from [GitHub Releases](https://github.com/rwese/kb/releases). The binary is self-contained — SQLite with FTS5 is built in, so no Go or extra system libraries are needed.
+Pass this prompt to your agent:
 
-### Build from source
+```markdown
+Install this knowledgebase (kb) from github, use the latest release. Verify there is no `kb` installed and update it.
 
-**Requirements**: Go 1.22+ and SQLite with the FTS5 extension (pre-installed on macOS; on Linux install `libsqlite3-dev`).
+Repository: https://github.com/rwese/kb/
 
-```bash
-git clone https://github.com/rwese/kb
-cd kb
-./build.sh install
+Install to the user local bin directory, commonly `~/.local/bin/, ask for user confirmation.
+
+## Knowledgebase Agent Skill
+
+Offer setup of the Knowledgebase skill for the user, found here:
+
+https://github.com/rwese/kb/blob/main/skills/knowledgebase
+
+User may choose to install it globally or in the currents project scope.
 ```
 
-Go users can also install directly:
+### Prebuilt
 
-```bash
-CGO_CFLAGS="-DSQLITE_ENABLE_FTS5" go install -tags sqlite_fts5 github.com/rwese/kb@latest
-```
+Download the latest binary for your platform from [GitHub Releases](https://github.com/rwese/kb/releases).
 
 ## Quick Start
 
