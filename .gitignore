@@ -4,6 +4,7 @@
 # Binaries
 bin/
 dist/
+tmp-dist/
 *.exe
 
 # IDE
