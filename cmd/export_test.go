@@ -49,7 +49,7 @@ func TestExportEntryWritesFolderMarkdownAndAssets(t *testing.T) {
 		},
 	}
 
-	exportPath, err := ExportEntry(entry, articles, nil, filepath.Join(tmpDir, "out"), assetsRoot, false)
+	exportPath, err := ExportEntry(entry, articles, nil, filepath.Join(tmpDir, "out"), assetsRoot, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestExportEntryWritesAttachmentsAndDryRun(t *testing.T) {
 
 	// Dry run lists the attachment destination without writing
 	dryOutput := filepath.Join(tmpDir, "dry")
-	if _, err := ExportEntry(entry, nil, attachments, dryOutput, assetsRoot, true); err != nil {
+	if _, err := ExportEntry(entry, nil, attachments, dryOutput, assetsRoot, true, true); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(dryOutput); !os.IsNotExist(err) {
@@ -114,7 +114,7 @@ func TestExportEntryWritesAttachmentsAndDryRun(t *testing.T) {
 	}
 
 	// Attachment-only entry (no articles)
-	exportPath, err := ExportEntry(entry, nil, attachments, filepath.Join(tmpDir, "out"), assetsRoot, false)
+	exportPath, err := ExportEntry(entry, nil, attachments, filepath.Join(tmpDir, "out"), assetsRoot, true, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,17 +127,50 @@ func TestExportEntryWritesAttachmentsAndDryRun(t *testing.T) {
 	if !strings.Contains(text, "## Attachments") {
 		t.Fatalf("missing attachments section:\n%s", text)
 	}
-	if !strings.Contains(text, "[Linux helper executable](assets/attachments/att01/helper) (`helper`, 11 B)") {
+	if !strings.Contains(text, "[Linux helper executable](attachments/att01/helper) (`helper`, 11 B)") {
 		t.Fatalf("missing relative attachment link:\n%s", text)
 	}
 
-	exported := filepath.Join(exportPath, "assets", "attachments", "att01", "helper")
+	exported := filepath.Join(exportPath, "attachments", "att01", "helper")
 	info, err := os.Stat(exported)
 	if err != nil {
 		t.Fatalf("exported attachment missing: %v", err)
 	}
 	if info.Mode().Perm() != 0755 {
 		t.Fatalf("exported perm = %o, want 755", info.Mode().Perm())
+	}
+}
+
+func TestExportEntrySkipsAttachmentsWithoutFlag(t *testing.T) {
+	tmpDir := t.TempDir()
+	assetsRoot := filepath.Join(tmpDir, "store")
+	storedPath := filepath.Join(assetsRoot, "entries", "entry1", "attachments", "att01", "helper")
+	if err := os.MkdirAll(filepath.Dir(storedPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(storedPath, []byte("#!/bin/sh\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	entry := &db.Entry{ID: "entry1", Title: "Linux Helper", CreatedAt: "2026-05-01 10:00:00"}
+	attachments := []db.EntryAttachment{
+		{ID: "att01", EntryID: "entry1", Title: "Helper", FileName: "helper", StoreRelPath: "entries/entry1/attachments/att01/helper", SizeBytes: 11, ModePerm: 0755},
+	}
+
+	exportPath, err := ExportEntry(entry, nil, attachments, filepath.Join(tmpDir, "out"), assetsRoot, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	content, err := os.ReadFile(filepath.Join(exportPath, "linux-helper.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(content), "## Attachments") {
+		t.Fatalf("attachments section must be omitted without the flag:\n%s", content)
+	}
+	if _, err := os.Stat(filepath.Join(exportPath, "attachments", "att01")); !os.IsNotExist(err) {
+		t.Fatalf("attachments must not be copied without the flag (err = %v)", err)
 	}
 }
 
@@ -160,7 +193,7 @@ func TestExportEntryAttachmentWithArticleKeepsAssetSection(t *testing.T) {
 		{ID: "att01", EntryID: "entry1", Title: "Helper", FileName: "helper", StoreRelPath: "entries/entry1/attachments/att01/helper", SizeBytes: 1, ModePerm: 0755},
 	}
 
-	exportPath, err := ExportEntry(entry, articles, attachments, filepath.Join(tmpDir, "out"), assetsRoot, false)
+	exportPath, err := ExportEntry(entry, articles, attachments, filepath.Join(tmpDir, "out"), assetsRoot, true, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,6 +302,74 @@ func TestShortDescriptionTruncates(t *testing.T) {
 	}
 }
 
+func TestExportWithAttachmentsFlagGatesAttachmentCopy(t *testing.T) {
+	env := setupTempKBTestEnv(t)
+
+	database, err := db.Open(env.DBPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = database.Close() }()
+	if err := database.Init(); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.AddEntry("entry01", "Linux Helper", "shell"); err != nil {
+		t.Fatal(err)
+	}
+	// Seed a stored attachment like attachment add would.
+	stored := filepath.Join(env.AssetsPath, "entries", "entry01", "attachments", "att01", "helper")
+	if err := os.MkdirAll(filepath.Dir(stored), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stored, []byte("#!/bin/sh\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.AddEntryAttachment(db.EntryAttachment{
+		ID: "att01", EntryID: "entry01", Title: "Helper script", FileName: "helper",
+		OriginalPath: stored, StoreRelPath: "entries/entry01/attachments/att01/helper",
+		SHA256: "x", SizeBytes: 11, ModePerm: 0755,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Without the flag: no attachments dir and no links.
+	outPlain := filepath.Join(t.TempDir(), "plain")
+	commands := &Commands{}
+	if err := commands.Run(context.Background(), []string{"kb", "export", "--all", "--force", "-o", outPlain}); err != nil {
+		t.Fatalf("export without flag failed: %v", err)
+	}
+	plainContent, err := os.ReadFile(filepath.Join(outPlain, "linux-helper", "linux-helper.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(plainContent), "## Attachments") {
+		t.Fatalf("attachments section present without flag:\n%s", plainContent)
+	}
+	if _, err := os.Stat(filepath.Join(outPlain, "linux-helper", "attachments")); !os.IsNotExist(err) {
+		t.Fatalf("attachments copied without flag (err = %v)", err)
+	}
+
+	// With the flag: attachments land under <entry>/attachments/ and are linked.
+	outWith := filepath.Join(t.TempDir(), "with")
+	if err := commands.Run(context.Background(), []string{"kb", "export", "--all", "--with-attachments", "--force", "-o", outWith}); err != nil {
+		t.Fatalf("export with flag failed: %v", err)
+	}
+	withContent, err := os.ReadFile(filepath.Join(outWith, "linux-helper", "linux-helper.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(withContent), "[Helper script](attachments/att01/helper)") {
+		t.Fatalf("missing attachment link:\n%s", withContent)
+	}
+	exported := filepath.Join(outWith, "linux-helper", "attachments", "att01", "helper")
+	info, err := os.Stat(exported)
+	if err != nil {
+		t.Fatalf("exported attachment missing: %v", err)
+	}
+	if info.Mode().Perm() != 0755 {
+		t.Fatalf("exported perm = %o, want 755", info.Mode().Perm())
+	}
+}
 
 func TestExportAllWritesIndexFile(t *testing.T) {
 	env := setupTempKBTestEnv(t)

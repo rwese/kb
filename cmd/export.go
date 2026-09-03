@@ -454,7 +454,13 @@ func generateArticleFile(entry *db.Entry, article articleView) (string, error) {
 	return frontMatter + appendAssetLinks(content, article.ID, article.Assets), nil
 }
 
-func ExportEntry(entry *db.Entry, articles []articleView, attachments []db.EntryAttachment, outputDir, assetsRoot string, dryRun bool) (string, error) {
+func ExportEntry(entry *db.Entry, articles []articleView, attachments []db.EntryAttachment, outputDir, assetsRoot string, withAttachments, dryRun bool) (string, error) {
+	// Attachments are exported only with --with-attachments; without the flag
+	// they are excluded from the tree, the links, and the dry-run listing.
+	if !withAttachments {
+		attachments = nil
+	}
+
 	slug := slugify(entry.Title)
 	if slug == "" {
 		slug = entry.ID
@@ -475,7 +481,7 @@ func ExportEntry(entry *db.Entry, articles []articleView, attachments []db.Entry
 			}
 		}
 		for _, att := range attachments {
-			fmt.Printf("[DRY-RUN]   - %s\n", filepath.Join(entryPath, "assets", "attachments", att.ID, filepath.FromSlash(att.FileName)))
+			fmt.Printf("[DRY-RUN]   - %s\n", filepath.Join(entryPath, "attachments", att.ID, filepath.FromSlash(att.FileName)))
 		}
 		return entryPath, nil
 	}
@@ -560,6 +566,10 @@ func (c *Commands) export() *cli.Command {
 				Usage: "Export all entries",
 			},
 			&cli.BoolFlag{
+				Name:  "with-attachments",
+				Usage: "Also export entry attachments into <entry>/attachments/",
+			},
+			&cli.BoolFlag{
 				Name:  "force",
 				Usage: "Skip overwrite confirmation prompt",
 			},
@@ -586,6 +596,7 @@ func (c *Commands) export() *cli.Command {
 			outputDir := cmd.String("output")
 			entryID := cmd.String("entry")
 			exportAll := cmd.Bool("all")
+			withAttachments := cmd.Bool("with-attachments")
 			force := cmd.Bool("force")
 			dryRun := cmd.Bool("dry-run")
 
@@ -688,11 +699,11 @@ func (c *Commands) export() *cli.Command {
 				// Export the entry
 				if dryRun {
 					fmt.Printf("[DRY-RUN] Export: %s (%s)\n", e.entry.Title, e.entry.ID)
-					if _, err := ExportEntry(e.entry, e.articles, e.attachments, outputDir, cfg.AssetsPath, true); err != nil {
+					if _, err := ExportEntry(e.entry, e.articles, e.attachments, outputDir, cfg.AssetsPath, withAttachments, true); err != nil {
 						return err
 					}
 				} else {
-					path, err := ExportEntry(e.entry, e.articles, e.attachments, outputDir, cfg.AssetsPath, false)
+					path, err := ExportEntry(e.entry, e.articles, e.attachments, outputDir, cfg.AssetsPath, withAttachments, false)
 					if err != nil {
 						return fmt.Errorf("failed to export %s: %w", e.entry.ID, err)
 					}

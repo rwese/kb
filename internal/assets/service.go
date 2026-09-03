@@ -362,11 +362,11 @@ func RemoveEntryAttachmentsTree(assetsRoot, entryID string) error {
 }
 
 // ExportAttachmentFile copies an attachment into the export tree at
-// <outputRoot>/assets/attachments/<attachment-id>/<file-name>, preserving
-// regular permission bits.
+// <outputRoot>/attachments/<attachment-id>/<file-name>, preserving regular
+// permission bits.
 func ExportAttachmentFile(assetsRoot, outputRoot string, att db.EntryAttachment) error {
 	srcPath := filepath.Join(assetsRoot, filepath.FromSlash(att.StoreRelPath))
-	destPath := filepath.Join(outputRoot, "assets", "attachments", att.ID, filepath.FromSlash(att.FileName))
+	destPath := filepath.Join(outputRoot, "attachments", att.ID, filepath.FromSlash(att.FileName))
 	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
 		return err
 	}
@@ -375,7 +375,7 @@ func ExportAttachmentFile(assetsRoot, outputRoot string, att db.EntryAttachment)
 }
 
 // AttachmentLinkPath is the relative markdown link target for an attachment
-// inside an exported entry directory.
+// exported with --with-attachments.
 func AttachmentLinkPath(entryID, attachmentID, fileName string) string {
-	return filepath.ToSlash(filepath.Join("assets", "attachments", attachmentID, filepath.FromSlash(fileName)))
+	return filepath.ToSlash(filepath.Join("attachments", attachmentID, filepath.FromSlash(fileName)))
 }

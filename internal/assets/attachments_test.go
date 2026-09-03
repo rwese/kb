@@ -160,7 +160,7 @@ func TestExportAttachmentFilePreservesMode(t *testing.T) {
 	if err := ExportAttachmentFile(filepath.Join(tmpDir, "store"), outputRoot, att); err != nil {
 		t.Fatal(err)
 	}
-	exported := filepath.Join(outputRoot, "assets", "attachments", "att001", "helper")
+	exported := filepath.Join(outputRoot, "attachments", "att001", "helper")
 	info, err := os.Stat(exported)
 	if err != nil {
 		t.Fatalf("exported file missing: %v", err)
