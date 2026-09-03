@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/rwese/kb/internal/config"
 	"github.com/rwese/kb/internal/db"
@@ -25,6 +26,7 @@ func (c *Commands) search() *cli.Command {
 			&cli.StringFlag{Name: "format", Aliases: []string{"o"}, Usage: "Output format", DefaultText: "markdown"},
 			&cli.BoolFlag{Name: "all", Usage: "Include deleted entries"},
 			&cli.BoolFlag{Name: "bm25-only", Usage: "Use BM25-only search (skip semantic)"},
+			&cli.BoolFlag{Name: "full-content", Usage: "Show full result details (previous verbose format)"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			cfg, err := config.Discover()
@@ -83,7 +85,7 @@ func (c *Commands) search() *cli.Command {
 				results = results[:topK]
 			}
 
-			return formatSearchResults(results, cmd.String("format"), cmd.Bool("bm25-only"))
+			return formatSearchResults(results, cmd.String("format"), cmd.Bool("bm25-only"), cmd.Bool("full-content"))
 		},
 	}
 }
@@ -95,7 +97,7 @@ func min(a, b int) int {
 	return b
 }
 
-func formatSearchResults(results []db.SearchResult, format string, bm25Only bool) error {
+func formatSearchResults(results []db.SearchResult, format string, bm25Only, fullContent bool) error {
 	switch format {
 	case "json":
 		enc := json.NewEncoder(os.Stdout)
@@ -106,25 +108,95 @@ func formatSearchResults(results []db.SearchResult, format string, bm25Only bool
 			fmt.Printf("[%.2f] %s (entry %s)\n%s\n\n", r.Score, r.EntryTitle, r.EntryID, r.Content)
 		}
 	default: // markdown
-		fmt.Printf("## Search Results (%d found)\n\n", len(results))
-		if !bm25Only {
-			fmt.Println("*Using hybrid BM25 + semantic search*")
-		}
-		for i, r := range results {
-			fmt.Printf("### Result #%d\n\n", i+1)
-			fmt.Printf("- Entry: [%s](%s)\n", r.EntryTitle, r.EntryID)
-			fmt.Printf("- Entry ID: %s\n", r.EntryID)
-			fmt.Printf("- Score: %.3f\n", r.Score)
-			if r.BM25Score > 0 || r.SemanticScore > 0 {
-				fmt.Printf("  (BM25: %.2f + Semantic: %.2f)\n", r.BM25Score, r.SemanticScore)
-			}
-			if r.Title != "" {
-				fmt.Printf("- Article: %s\n", r.Title)
-			}
-			fmt.Printf("\n---\n\n%s\n\n", r.Content)
+		if fullContent {
+			formatSearchResultsVerbose(results, bm25Only)
+		} else {
+			formatSearchResultsCompact(results)
 		}
 	}
 	return nil
+}
+
+// formatSearchResultsCompact groups matches by entry: entry headline, the
+// matching articles, and a truncated content excerpt from the best match.
+func formatSearchResultsCompact(results []db.SearchResult) {
+	type entryGroup struct {
+		entryID    string
+		entryTitle string
+		entryTags  string
+		articles   []db.SearchResult
+	}
+
+	seen := make(map[string]int)
+	var groups []entryGroup
+	for _, r := range results {
+		if i, ok := seen[r.EntryID]; ok {
+			groups[i].articles = append(groups[i].articles, r)
+			continue
+		}
+		seen[r.EntryID] = len(groups)
+		groups = append(groups, entryGroup{
+			entryID:    r.EntryID,
+			entryTitle: r.EntryTitle,
+			entryTags:  r.EntryTags,
+			articles:   []db.SearchResult{r},
+		})
+	}
+
+	for _, g := range groups {
+		fmt.Printf("ID: %s, Title: %s", g.entryID, g.entryTitle)
+		if g.entryTags != "" {
+			fmt.Printf(", Tags: %s", g.entryTags)
+		}
+		fmt.Printf("\n\n")
+		fmt.Println("Entry-Article(s):")
+		fmt.Printf("\n")
+		for _, a := range g.articles {
+			fmt.Printf("Article-ID: %s, Title: %s\n", a.ID, a.Title)
+		}
+		fmt.Printf("\nEntry-Content:\n\n")
+		excerpt, truncated := truncateContent(g.articles[0].Content, 10)
+		fmt.Println(excerpt)
+		if truncated {
+			fmt.Printf("... output was truncated use `kb entry get %s` for full content.\n", g.entryID)
+		}
+		fmt.Println()
+	}
+}
+
+// formatSearchResultsVerbose is the previous markdown output: full result
+// details including scores and complete article content.
+func formatSearchResultsVerbose(results []db.SearchResult, bm25Only bool) {
+	fmt.Printf("## Search Results (%d found)\n\n", len(results))
+	if !bm25Only {
+		fmt.Println("*Using hybrid BM25 + semantic search*")
+	}
+	for i, r := range results {
+		fmt.Printf("### Result #%d\n\n", i+1)
+		fmt.Printf("- Entry: [%s](%s)\n", r.EntryTitle, r.EntryID)
+		fmt.Printf("- Entry ID: %s\n", r.EntryID)
+		fmt.Printf("- Score: %.3f\n", r.Score)
+		if r.BM25Score > 0 || r.SemanticScore > 0 {
+			fmt.Printf("  (BM25: %.2f + Semantic: %.2f)\n", r.BM25Score, r.SemanticScore)
+		}
+		if r.Title != "" {
+			fmt.Printf("- Article: %s\n", r.Title)
+		}
+		fmt.Printf("\n---\n\n%s\n\n", r.Content)
+	}
+}
+
+// truncateContent returns the first maxLines non-empty-trailing lines and
+// whether content was cut off.
+func truncateContent(content string, maxLines int) (string, bool) {
+	lines := strings.Split(content, "\n")
+	for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
+		lines = lines[:len(lines)-1]
+	}
+	if len(lines) <= maxLines {
+		return strings.Join(lines, "\n"), false
+	}
+	return strings.Join(lines[:maxLines], "\n"), true
 }
 
 func formatJSON(v interface{}) error {

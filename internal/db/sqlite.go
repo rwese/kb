@@ -55,6 +55,7 @@ type SearchResult struct {
 	Article
 	EntryID       string  `json:"entry_id"`
 	EntryTitle    string  `json:"entry_title"`
+	EntryTags     string  `json:"entry_tags"`
 	Score         float64 `json:"score"`
 	BM25Score     float64 `json:"bm25_score,omitempty"`
 	SemanticScore float64 `json:"semantic_score,omitempty"`
@@ -535,7 +536,7 @@ func (d *DB) SearchWithDeleted(query string, topK int, includeDeleted bool) ([]S
 
 	rows, err := d.conn.Query(`
 		SELECT a.id, a.entry_id, a.title, a.content, a.created_at,
-			   e.title as entry_title,
+			   e.title as entry_title, e.tags as entry_tags,
 			   bm25(articles_fts) as score
 		FROM articles_fts
 		JOIN articles a ON articles_fts.rowid = a.rowid
@@ -553,7 +554,7 @@ func (d *DB) SearchWithDeleted(query string, topK int, includeDeleted bool) ([]S
 	for rows.Next() {
 		var r SearchResult
 		var title sql.NullString
-		if err := rows.Scan(&r.ID, &r.EntryID, &title, &r.Content, &r.CreatedAt, &r.EntryTitle, &r.Score); err != nil {
+		if err := rows.Scan(&r.ID, &r.EntryID, &title, &r.Content, &r.CreatedAt, &r.EntryTitle, &r.EntryTags, &r.Score); err != nil {
 			return nil, err
 		}
 		if title.Valid {

@@ -65,7 +65,23 @@ top_k: 5   # default number of search results
 
 ## Search
 
-`kb search <query>` finds articles by keyword, ranked by relevance. To get results more relevant to what you are currently working on, pass your task or prompt text:
+`kb search <query>` finds articles by keyword, ranked by relevance. Results are grouped by entry: the entry's id, title and tags, the matching articles, and up to 10 lines of the best-matching content (with a hint to `kb entry get <id>` for the rest):
+
+```
+ID: 2f018d, Title: Bug: List Flickering, Tags: ui,bug
+
+Entry-Article(s):
+
+Article-ID: 2f018d-273b00, Title: Fix: throttle with requestAnimationFrame
+
+Entry-Content:
+
+Initial report: items flicker when scrolling.
+...
+... output was truncated use `kb entry get 2f018d` for full content.
+```
+
+Pass `--full-content` to restore the previous verbose format (per-result scores and uncut content). To get results more relevant to what you are currently working on, pass your task or prompt text:
 
 ```bash
 kb search --prompt "I am fixing the flickering list"
