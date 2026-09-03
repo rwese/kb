@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -169,6 +170,40 @@ func formatDate(timestamp string) string {
 	return t.Format("2006-01-02")
 }
 
+// exportItem bundles an entry with the article views and attachments loaded
+// for an export run.
+type exportItem struct {
+	entry       *db.Entry
+	articles    []articleView
+	attachments []db.EntryAttachment
+}
+
+// articleFileBase returns the export file base name (without .md) for a
+// non-primary article file.
+func articleFileBase(article articleView) string {
+	if fname := slugify(article.Title); fname != "" {
+		return fname
+	}
+	return "article-" + article.ID
+}
+
+// entryExportPaths returns the output file paths (relative to outputDir) that
+// ExportEntry writes for an entry: the primary entry file plus one file per
+// additional article. Path resolution mirrors ExportEntry so the index always
+// references the exact files that were written.
+func entryExportPaths(entry *db.Entry, articles []articleView, outputDir string) []string {
+	slug := slugify(entry.Title)
+	if slug == "" {
+		slug = entry.ID
+	}
+	entryPath := resolveExportEntryPath(outputDir, slug, entry.ID)
+	paths := []string{filepath.Join(entryPath, slug+".md")}
+	for i := 1; i < len(articles); i++ {
+		paths = append(paths, filepath.Join(entryPath, articleFileBase(articles[i])+".md"))
+	}
+	return paths
+}
+
 func resolveExportEntryPath(outputDir, slug, entryID string) string {
 	entryPath := filepath.Join(outputDir, slug)
 	info, err := os.Stat(entryPath)
@@ -246,6 +281,159 @@ func generateEntryFile(entry *db.Entry, article articleView, attachments []db.En
 }
 
 // generateArticleFile creates an article file content
+// cleanMarkdownLine strips common markdown formatting so article content can
+// be used as a plain-text description.
+func cleanMarkdownLine(s string) string {
+	s = strings.TrimSpace(s)
+	// Drop leading heading marker or list bullet on the first line.
+	s = regexp.MustCompile(`(?m)^[#>*\-\d.]\s+`).ReplaceAllString(s, "")
+	// Links become their text.
+	s = regexp.MustCompile(`\[([^\]]*)\]\([^)]*\)`).ReplaceAllString(s, "$1")
+	// Remove emphasis, inline code, and blockquote markers.
+	s = regexp.MustCompile(`(\*\*|__|\*|_|`+"`"+`|>)`).ReplaceAllString(s, "")
+	// Collapse whitespace and newlines into single spaces.
+	s = regexp.MustCompile(`\s+`).ReplaceAllString(s, " ")
+	return strings.TrimSpace(s)
+}
+
+// shortDescription extracts the first paragraph of article content as a plain
+// text description, truncated for index readability.
+func shortDescription(content string) string {
+	content = strings.TrimSpace(content)
+	if first := strings.Index(content, "\n\n"); first >= 0 {
+		content = content[:first]
+	}
+	desc := cleanMarkdownLine(content)
+	const maxLen = 160
+	if len(desc) > maxLen {
+		desc = strings.TrimSpace(desc[:maxLen]) + "…"
+	}
+	return desc
+}
+
+// formatTags renders parsed tags as Obsidian tag references, e.g. "#bug #cache".
+func formatTags(tags []string) string {
+	if len(tags) == 0 {
+		return ""
+	}
+	tagged := make([]string, 0, len(tags))
+	for _, t := range tags {
+		tagged = append(tagged, "#"+t)
+	}
+	return strings.Join(tagged, " ")
+}
+
+// indexWikilink renders an Obsidian wikilink for a file relative to the vault
+// root (outputDir). Basenames are used when unique — matching Obsidian's own
+// resolution — and vault-relative paths otherwise, so links stay unambiguous
+// when two entries export files with the same basename.
+func indexWikilink(path, outputDir, display string, basenames map[string]int) string {
+	rel, err := filepath.Rel(outputDir, path)
+	if err != nil {
+		rel = path
+	}
+	rel = filepath.ToSlash(rel)
+
+	target := strings.TrimSuffix(filepath.Base(rel), ".md")
+	if basenames[target] > 1 {
+		target = strings.TrimSuffix(rel, ".md")
+	}
+	if display == "" {
+		return "[" + target + "]"
+	}
+	return fmt.Sprintf("[[%s|%s]]", target, display)
+}
+
+// indexFile describes one exported file listed in the index.
+type indexFile struct {
+	path    string // output-absolute path
+	heading string
+	desc    string
+	tags    string
+}
+
+// generateIndex builds the Obsidian INDEX.md content listing every exported
+// file with a wikilink, its heading, a short description, and the entry tags.
+func generateIndex(entries []exportItem, outputDir string, generatedAt time.Time) (string, error) {
+	fm := FrontMatter{
+		Title:    "Knowledge Base Index",
+		Created:  generatedAt.Format("2006-01-02"),
+		KbSource: "kb",
+	}
+	front, err := formatFrontMatter(fm)
+	if err != nil {
+		return "", err
+	}
+
+	// Collect every exported file and its link target before rendering so
+	// basename uniqueness is known across the whole vault.
+	type entryFiles struct {
+		title string
+		files []indexFile
+	}
+	all := make([]entryFiles, 0, len(entries))
+	basenames := make(map[string]int)
+	for _, e := range entries {
+		ef := entryFiles{title: e.entry.Title}
+
+		paths := entryExportPaths(e.entry, e.articles, outputDir)
+		tags := formatTags(parseTags(e.entry.Tags))
+
+		for i, p := range paths {
+			rel, err := filepath.Rel(outputDir, p)
+			if err != nil {
+				rel = p
+			}
+			basename := strings.TrimSuffix(filepath.Base(rel), ".md")
+			basenames[basename]++
+
+			f := indexFile{path: p, tags: tags}
+			if i == 0 {
+				// Primary file: heading is always the entry title.
+				f.heading = e.entry.Title
+				if len(e.articles) > 0 {
+					f.desc = shortDescription(e.articles[0].Content)
+				} else {
+					f.desc = "*No content*"
+				}
+			} else {
+				f.heading = e.articles[i].Title
+				f.desc = shortDescription(e.articles[i].Content)
+			}
+			ef.files = append(ef.files, f)
+		}
+		all = append(all, ef)
+	}
+
+	var b strings.Builder
+	b.WriteString(front)
+	b.WriteString("# Knowledge Base Index\n\n")
+
+	noun := "entries"
+	if len(entries) == 1 {
+		noun = "entry"
+	}
+	fmt.Fprintf(&b, "Exported %d %s from kb on %s.\n\n", len(entries), noun, fm.Created)
+
+	sort.Slice(all, func(i, j int) bool {
+		return strings.ToLower(all[i].title) < strings.ToLower(all[j].title)
+	})
+
+	for _, ef := range all {
+		fmt.Fprintf(&b, "## %s\n\n", ef.title)
+		for _, f := range ef.files {
+			fmt.Fprintf(&b, "- %s — %s", indexWikilink(f.path, outputDir, f.heading, basenames), f.desc)
+			if f.tags != "" {
+				fmt.Fprintf(&b, " %s", f.tags)
+			}
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+	}
+
+	return b.String(), nil
+}
+
 func generateArticleFile(entry *db.Entry, article articleView) (string, error) {
 	fm := FrontMatter{
 		Title:    article.Title,
@@ -279,11 +467,7 @@ func ExportEntry(entry *db.Entry, articles []articleView, attachments []db.Entry
 		fmt.Printf("[DRY-RUN]   - %s\n", mainFile)
 		for i := 1; i < len(articles); i++ {
 			a := articles[i]
-			fname := slugify(a.Title)
-			if fname == "" {
-				fname = "article-" + a.ID
-			}
-			fmt.Printf("[DRY-RUN]   - %s\n", filepath.Join(entryPath, fname+".md"))
+			fmt.Printf("[DRY-RUN]   - %s\n", filepath.Join(entryPath, articleFileBase(a)+".md"))
 		}
 		for _, article := range articles {
 			for _, asset := range article.Assets {
@@ -332,11 +516,7 @@ func ExportEntry(entry *db.Entry, articles []articleView, attachments []db.Entry
 			return "", err
 		}
 
-		fname := slugify(article.Title)
-		if fname == "" {
-			fname = "article-" + article.ID
-		}
-		articleFile := filepath.Join(entryPath, fname+".md")
+		articleFile := filepath.Join(entryPath, articleFileBase(article)+".md")
 		if err := os.WriteFile(articleFile, []byte(content), 0644); err != nil {
 			return "", fmt.Errorf("failed to write article file: %w", err)
 		}
@@ -433,11 +613,6 @@ func (c *Commands) export() *cli.Command {
 			}
 
 			// Collect entries to export
-			type exportItem struct {
-				entry       *db.Entry
-				articles    []articleView
-				attachments []db.EntryAttachment
-			}
 			var entries []exportItem
 
 			if entryID != "" {
@@ -483,8 +658,9 @@ func (c *Commands) export() *cli.Command {
 				}
 			}
 
-			// Track export decisions
+			// Track export decisions and the entries actually written
 			exportAllPrompt := false
+			var exported []exportItem
 
 			for _, e := range entries {
 				// Check for conflicts
@@ -520,7 +696,42 @@ func (c *Commands) export() *cli.Command {
 					if err != nil {
 						return fmt.Errorf("failed to export %s: %w", e.entry.ID, err)
 					}
+					exported = append(exported, e)
 					fmt.Printf("Exported: %s (%s) → %s\n", e.entry.Title, e.entry.ID, path)
+				}
+			}
+
+			// Knowledge base index: always written, referencing the files that
+			// were actually exported in this run.
+			indexPath := filepath.Join(outputDir, "INDEX.md")
+			indexContent, err := generateIndex(exported, outputDir, time.Now())
+			if err != nil {
+				return fmt.Errorf("failed to generate index: %w", err)
+			}
+
+			if dryRun {
+				fmt.Printf("[DRY-RUN] Would write: %s\n", indexPath)
+			} else {
+				writeIndex := true
+				if _, statErr := os.Stat(indexPath); statErr == nil && !force && !exportAllPrompt {
+					fmt.Printf("Found existing: %s\n", indexPath)
+					fmt.Print("[Y]es, [N]o, [A]ll, [Q]uit: ")
+					reader := bufio.NewReader(os.Stdin)
+					input, _ := reader.ReadString('\n')
+					switch strings.TrimSpace(strings.ToUpper(input)) {
+					case "Q":
+						fmt.Println("Cancelled")
+						return nil
+					case "N":
+						writeIndex = false
+					}
+				}
+
+				if writeIndex {
+					if err := os.WriteFile(indexPath, []byte(indexContent), 0644); err != nil {
+						return fmt.Errorf("failed to write index: %w", err)
+					}
+					fmt.Printf("Wrote index: %s\n", indexPath)
 				}
 			}
 
