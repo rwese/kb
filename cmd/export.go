@@ -191,7 +191,7 @@ func resolveExportEntryPath(outputDir, slug, entryID string) string {
 	return filepath.Join(outputDir, fmt.Sprintf("%s-%s", slug, entryID))
 }
 
-// generateEntryFile creates the main entry file content
+// appendAssetLinks creates the article asset section of an exported entry file.
 func appendAssetLinks(content string, articleID string, assetList []db.ArticleAsset) string {
 	if len(assetList) == 0 {
 		return content
@@ -207,7 +207,24 @@ func appendAssetLinks(content string, articleID string, assetList []db.ArticleAs
 	return b.String()
 }
 
-func generateEntryFile(entry *db.Entry, article articleView) (string, error) {
+// appendAttachmentsSection creates the entry attachments section of an
+// exported entry file with relative markdown links.
+func appendAttachmentsSection(content string, attachments []db.EntryAttachment) string {
+	if len(attachments) == 0 {
+		return content
+	}
+
+	var b strings.Builder
+	b.WriteString(content)
+	b.WriteString("\n\n## Attachments\n\n")
+	for _, att := range attachments {
+		link := assetstore.AttachmentLinkPath(att.EntryID, att.ID, att.FileName)
+		fmt.Fprintf(&b, "- [%s](%s) (`%s`, %s)\n", att.Title, link, att.FileName, assetstore.FormatSize(att.SizeBytes))
+	}
+	return b.String()
+}
+
+func generateEntryFile(entry *db.Entry, article articleView, attachments []db.EntryAttachment) (string, error) {
 	fm := FrontMatter{
 		Title:    entry.Title,
 		KbID:     entry.ID,
@@ -222,9 +239,10 @@ func generateEntryFile(entry *db.Entry, article articleView) (string, error) {
 		return "", err
 	}
 
-	// Entry file content: heading + article content
+	// Entry file content: heading + article content + asset and attachment links
 	content := fmt.Sprintf("# %s\n\n%s", entry.Title, article.Content)
-	return frontMatter + appendAssetLinks(content, article.ID, article.Assets), nil
+	content = appendAssetLinks(content, article.ID, article.Assets)
+	return frontMatter + appendAttachmentsSection(content, attachments), nil
 }
 
 // generateArticleFile creates an article file content
@@ -248,7 +266,7 @@ func generateArticleFile(entry *db.Entry, article articleView) (string, error) {
 	return frontMatter + appendAssetLinks(content, article.ID, article.Assets), nil
 }
 
-func ExportEntry(entry *db.Entry, articles []articleView, outputDir, assetsRoot string, dryRun bool) (string, error) {
+func ExportEntry(entry *db.Entry, articles []articleView, attachments []db.EntryAttachment, outputDir, assetsRoot string, dryRun bool) (string, error) {
 	slug := slugify(entry.Title)
 	if slug == "" {
 		slug = entry.ID
@@ -272,6 +290,9 @@ func ExportEntry(entry *db.Entry, articles []articleView, outputDir, assetsRoot 
 				fmt.Printf("[DRY-RUN]   - %s\n", filepath.Join(entryPath, "assets", asset.ArticleID, filepath.FromSlash(asset.LogicalPath)))
 			}
 		}
+		for _, att := range attachments {
+			fmt.Printf("[DRY-RUN]   - %s\n", filepath.Join(entryPath, "assets", "attachments", att.ID, filepath.FromSlash(att.FileName)))
+		}
 		return entryPath, nil
 	}
 
@@ -282,7 +303,7 @@ func ExportEntry(entry *db.Entry, articles []articleView, outputDir, assetsRoot 
 	var content string
 	var err error
 	if len(articles) > 0 {
-		content, err = generateEntryFile(entry, articles[0])
+		content, err = generateEntryFile(entry, articles[0], attachments)
 	} else {
 		fm := FrontMatter{
 			Title:    entry.Title,
@@ -294,6 +315,7 @@ func ExportEntry(entry *db.Entry, articles []articleView, outputDir, assetsRoot 
 		}
 		content, _ = formatFrontMatter(fm)
 		content += fmt.Sprintf("# %s\n\n*No content*", entry.Title)
+		content = appendAttachmentsSection(content, attachments)
 	}
 	if err != nil {
 		return "", err
@@ -325,6 +347,12 @@ func ExportEntry(entry *db.Entry, articles []articleView, outputDir, assetsRoot 
 			if err := assetstore.ExportAssetFile(assetsRoot, entryPath, asset); err != nil {
 				return "", fmt.Errorf("failed to export asset %s: %w", asset.ID, err)
 			}
+		}
+	}
+
+	for _, att := range attachments {
+		if err := assetstore.ExportAttachmentFile(assetsRoot, entryPath, att); err != nil {
+			return "", fmt.Errorf("failed to export attachment %s: %w", att.ID, err)
 		}
 	}
 
@@ -405,10 +433,12 @@ func (c *Commands) export() *cli.Command {
 			}
 
 			// Collect entries to export
-			var entries []struct {
-				entry    *db.Entry
-				articles []articleView
+			type exportItem struct {
+				entry       *db.Entry
+				articles    []articleView
+				attachments []db.EntryAttachment
 			}
+			var entries []exportItem
 
 			if entryID != "" {
 				// Single entry
@@ -424,17 +454,19 @@ func (c *Commands) export() *cli.Command {
 				if err != nil {
 					return err
 				}
-				entries = append(entries, struct {
-					entry    *db.Entry
-					articles []articleView
-				}{entry: entry, articles: views})
+				attachments, err := database.ListEntryAttachments(entryID)
+				if err != nil {
+					return err
+				}
+				entries = append(entries, exportItem{entry: entry, articles: views, attachments: attachments})
 			} else {
 				// All entries
 				allEntries, err := database.ListEntries()
 				if err != nil {
 					return err
 				}
-				for _, e := range allEntries {
+				for i := range allEntries {
+					e := &allEntries[i]
 					articles, err := database.GetArticles(e.ID)
 					if err != nil {
 						return err
@@ -443,10 +475,11 @@ func (c *Commands) export() *cli.Command {
 					if err != nil {
 						return err
 					}
-					entries = append(entries, struct {
-						entry    *db.Entry
-						articles []articleView
-					}{entry: &e, articles: views})
+					attachments, err := database.ListEntryAttachments(e.ID)
+					if err != nil {
+						return err
+					}
+					entries = append(entries, exportItem{entry: e, articles: views, attachments: attachments})
 				}
 			}
 
@@ -479,11 +512,11 @@ func (c *Commands) export() *cli.Command {
 				// Export the entry
 				if dryRun {
 					fmt.Printf("[DRY-RUN] Export: %s (%s)\n", e.entry.Title, e.entry.ID)
-					if _, err := ExportEntry(e.entry, e.articles, outputDir, cfg.AssetsPath, true); err != nil {
+					if _, err := ExportEntry(e.entry, e.articles, e.attachments, outputDir, cfg.AssetsPath, true); err != nil {
 						return err
 					}
 				} else {
-					path, err := ExportEntry(e.entry, e.articles, outputDir, cfg.AssetsPath, false)
+					path, err := ExportEntry(e.entry, e.articles, e.attachments, outputDir, cfg.AssetsPath, false)
 					if err != nil {
 						return fmt.Errorf("failed to export %s: %w", e.entry.ID, err)
 					}

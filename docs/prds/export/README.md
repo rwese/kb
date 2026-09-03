@@ -17,6 +17,36 @@ output/
 └── another-note.md                # Single article entry
 ```
 
+### Entry attachments
+
+Entry attachments are exported with the entry, including entries that have no
+articles. They live under an `assets/attachments/` tree parallel to article
+assets in the entry export directory:
+
+```
+<entry-export-dir>/
+├── <entry-slug>.md
+└── assets/
+    ├── <article-id>/            # article assets (unchanged)
+    │   └── <logical-path>
+    └── attachments/
+        └── <attachment-id>/
+            └── <file-name>
+```
+
+The main entry Markdown file contains an `## Attachments` section with relative
+links:
+
+```markdown
+## Attachments
+
+- [Linux helper executable](assets/attachments/a1b2c3/helper) (`helper`, 1.2 MB)
+```
+
+Existing article asset links and paths remain unchanged. Export preserves regular
+permission bits of both article assets and attachments. `--dry-run` lists every
+attachment destination alongside article assets and markdown files.
+
 ### Front Matter Template
 
 Entry files:
