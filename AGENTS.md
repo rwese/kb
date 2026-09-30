@@ -22,7 +22,7 @@ CGO_CFLAGS="-DSQLITE_ENABLE_FTS5" go test ./...
 
 Done when every package reports `ok`.
 
-Tests are hermetic: `setupTempKBTestEnv` (in `cmd/test_helpers_test.go`) points the CLI at a `t.TempDir()` via `KB_PATH` and `HOME` overrides. New tests that touch the database or assets follow that pattern - set up an isolated env like it, never hit a real knowledgebase.
+Tests are hermetic: `setupTempKBTestEnv` (in `internal/cli/testenv_test.go`) points the CLI at a `t.TempDir()` via `KB_PATH` and `HOME` overrides. New tests that touch the database or assets follow that pattern - set up an isolated env like it, never hit a real knowledgebase.
 
 ### 3. Green gate
 
@@ -37,7 +37,10 @@ Done when gofmt reports no changes, golangci-lint passes, and `go test ./...` is
 
 | Path | Role |
 |------|------|
-| `cmd/` | CLI commands (urfave/cli/v3) + integration tests |
+| `cmd/kb/main.go` | runtime entrypoint (package main) |
+| `internal/cli/` | CLI root assembly (`cli.go`) + integration tests |
+| `internal/cli/{entry,article,asset,attachment,search,export,system}/` | subcommand definitions, one package per domain |
+| `internal/cli/shared/` | cross-cutting CLI helpers (db access, view types, printers) |
 | `internal/db/` | SQLite: entries, articles, assets, FTS index, vectors |
 | `internal/search/` | BM25 + hybrid ranking |
 | `internal/embed/` | embedding provider: ollama |

@@ -49,9 +49,10 @@ CGO_CFLAGS="-DSQLITE_ENABLE_FTS5" go test ./...
 
 | Path | Role |
 |------|------|
-| `main.go` | entrypoint; wires `cmd.Commands` |
-| `cmd/` | urfave/cli/v3 command definitions and orchestration |
-| `cmd/*_test.go` | CLI-level integration tests (hermetic, see below) |
+| `cmd/kb/main.go` | entrypoint; wires `cli.Commands` |
+| `internal/cli/` | urfave/cli/v3 root assembly (`cli.go`) + CLI-level integration tests |
+| `internal/cli/{entry,article,asset,attachment,search,export,system}/` | subcommand definitions, one package per domain |
+| `internal/cli/shared/` | cross-cutting CLI helpers (db access, view types, printers) |
 | `internal/db/` | SQLite storage: entries, articles, assets, attachments, FTS index, vectors |
 | `internal/search/` | BM25, hybrid ranking, and per-set score normalization (`ranker.go`) |
 | `internal/embed/` | embedding providers: `ollama.go` (server) |
@@ -95,7 +96,7 @@ Order: `$KB_PATH` env override → `~/.config/kb/config.yaml` → `.kb.yaml` (cw
 
 ### Hermetic tests
 
-Tests never touch a real knowledgebase. `setupTempKBTestEnv` (in `cmd/test_helpers_test.go`) creates a temp dir via `t.TempDir()` and points the CLI at it with `KB_PATH` and `HOME` env overrides. New tests that touch the database or assets must follow this pattern.
+Tests never touch a real knowledgebase. `setupTempKBTestEnv` (in `internal/cli/testenv_test.go`) creates a temp dir via `t.TempDir()` and points the CLI at it with `KB_PATH` and `HOME` env overrides. New tests that touch the database or assets must follow this pattern.
 
 ### Asset model
 
@@ -116,7 +117,7 @@ If no query embedding is available, search falls back to the merged BM25 results
 
 ## Writing tests
 
-Existing coverage is CLI-level (`cmd/*_test.go`) and unit-level (`internal/*/*_test.go`), table-driven where practical. Run the whole suite with the CGO flags from [Build & test](#build--test).
+Existing coverage is CLI-level (`internal/cli/*_test.go`) and unit-level (`internal/*/*_test.go`), table-driven where practical. Run the whole suite with the CGO flags from [Build & test](#build--test).
 
 ## PRDs
 

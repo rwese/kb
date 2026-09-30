@@ -48,7 +48,7 @@ jobs:
         run: |
           go build -tags sqlite_fts5 \
             -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" \
-            -o dist/kb-${{ matrix.goos }}-${{ matrix.goarch }} .
+            -o dist/kb-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/kb
 
       - name: Smoke test (native build)
         if: matrix.goos == 'linux' || matrix.goarch == 'arm64'
