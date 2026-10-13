@@ -67,7 +67,6 @@ func (r *Ranker) HybridSearch(
 			continue
 		}
 
-		// Normalize BM25 score to 0-1 (BM25 is typically negative, higher is better)
 		bm25Norm := NormalizeBM25(results[i].Score, minBM25, maxBM25)
 		results[i].BM25Score = bm25Norm
 
@@ -96,15 +95,13 @@ func (r *Ranker) HybridSearch(
 	return results
 }
 
-// NormalizeBM25 converts BM25 score to 0-1 range using sigmoid
+// NormalizeBM25 rescales a BM25 score to 0-1 via linear min-max over the
+// query's article hits: best hit 1.0, worst 0.0, a lone (or all-equal) hit 0.5.
 func NormalizeBM25(score, min, max float64) float64 {
-	// BM25 scores are typically negative, use sigmoid for normalization
-	// Map to approximately 0-1 range
 	if max-min == 0 {
 		return 0.5
 	}
 
-	// Linear normalization adjusted for negative BM25
 	normalized := (score - min) / (max - min)
 	return math.Max(0, math.Min(1, normalized))
 }

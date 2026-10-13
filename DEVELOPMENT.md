@@ -106,14 +106,38 @@ Tests never touch a real knowledgebase. `setupTempKBTestEnv` (in `internal/cli/t
 
 `attachment add` copies **exactly one regular file** into KB-owned storage under `<assets_path>/entries/<entryID>/attachments/<attachmentID>/<file name>` - a namespace separate from article assets. Directories, symlinks, sockets, devices, and named pipes are rejected; the title is trimmed and must be non-empty; SHA-256, byte size, and regular permission bits (including the executable bit; special bits stripped) are recorded. The file is treated as opaque untrusted bytes: never inspected, sourced, or executed. Replacement and deletion stage new bytes before the metadata commit and return an explicit partial-failure error when the old stored bytes cannot be removed.
 
-### Ranking (current implementation)
+### Ranking (ground truth)
 
-1. BM25 search over the article FTS index and the attachment metadata FTS index (`top_k * 2` candidates each). Article hits keep the current BM25 pipeline; attachment hits rank on title + file name only (binary contents are never indexed).
-2. Each candidate set is normalized to 0–1 separately at the database layer before merging - raw BM25 values from separate FTS tables are not directly comparable.
-3. If an embedder is configured and `--bm25-only` is not set, embed the query and re-rank **article hits only** (attachment hits keep their normalized BM25 score): BM25 scores are normalized to 0–1 and blended with the query-vector similarity at a fixed 0.3/0.7 BM25/semantic split (`search.DefaultRanker`).
-4. `--prompt` text is used as the query (falls back to the positional arg). The `--context`/`--context-file` flags exist but are currently unused.
+This section is the authoritative description of how retrieval works, documented from the code (`internal/db/sqlite.go`, `internal/search/ranker.go`, `internal/cli/search/search.go`). It supersedes the earlier local-embeddings PRD (removed in `91e83ab`); the 0.3/0.7 split and the design caveats below are inherited from that PRD's defaults (`bf413f5`) and have not been revisited since.
 
-If no query embedding is available, search falls back to the merged BM25 results.
+**Pipeline**
+
+1. **BM25 retrieval** - `SearchWithDeleted(query, topK*2, all)` runs two FTS5 queries (external-content, porter tokenizer): `articles_fts` (title + content) and `entry_attachments_fts` (title + file_name only; binary contents are never indexed). Both are kept in sync purely by triggers (`articles_ai/au/ad`, `entry_attachments_ai/au/ad`) - there is no background reindex.
+2. **Per-set normalization** - each candidate set is linearly normalized to 0-1 at the database layer (`normalizeScoreSet`) before merging; raw BM25 values from separate FTS tables are not comparable. A single-hit (or all-equal) set maps to 1.0.
+3. **Hybrid re-rank (`Ranker.HybridSearch`, article hits only)** - if `cfg.Embedder == "ollama"` and `--bm25-only` is not set, embed the query and re-rank article hits only; attachment hits keep their per-set normalized BM25 score:
+   - `BM25Score` = min-max normalized over the article hits of *this query* (best hit 1.0, worst 0.0, a lone hit 0.5) - plain linear rescaling, `NormalizeBM25` in `ranker.go`.
+   - `SemanticScore` = raw cosine similarity between query and article vector (`db.GetVector` + `embed.Cosine`), *not* min-max normalized. Nomic-embed-text cosines cluster roughly 0.6-0.95 for real matches.
+   - `Score = BM25Weight * BM25Score + SemanticWeight * SemanticScore`, then a global descending sort mixes article and attachment hits.
+
+**What the weights mean**
+
+- `BM25Weight = 0.3` (`search.DefaultRanker`, hardcoded, `NewRanker` constructor is not wired to config): lexical signal - exact keyword match strength as the precision/tiebreak component.
+- `SemanticWeight = 0.7`: meaning signal - paraphrase/intent match via embeddings as the dominant component.
+
+**Fallbacks**
+
+- Missing or erroring article vector: semantic score 0, result caps at `0.3 * BM25Score`.
+- Query embedding failure: silently degrades to the merged BM25 results.
+- `embedder: none` (the config default): no semantic tier at all, BM25-only.
+
+**Known limitations** (candidate optimization targets)
+
+- The fused `Score` is per-query relative: BM25 is rescaled to whatever hits came back, so scores are not comparable across queries.
+- Scale asymmetry: weighted 0.3 of a spread-out 0-1 keyword score vs 0.7 of a tight ~0.6-0.95 cosine band - semantics decides more than the nominal 0.7 suggests.
+- Vectors are written only at ingest (`article add`, `entry create`); updated article text keeps a stale embedding, and there is no reindex command.
+- `ReciprocalRankFusion` and `NormalizeScore` in `ranker.go` are implemented but unwired; `--context`/`--context-file` flags are registered but unused in the search action.
+
+`--prompt` text is used as the query (falls back to the positional arg).
 
 ## Writing tests
 
@@ -121,4 +145,4 @@ Existing coverage is CLI-level (`internal/cli/*_test.go`) and unit-level (`inter
 
 ## PRDs
 
-Feature specs live under `docs/prds/` (e.g. `export/`, `local-embeddings/`) as the source of truth for behavior. Update the matching PRD when a feature's behavior changes.
+Feature specs live under `docs/prds/` (e.g. `export/`) as the source of truth for behavior. Update the matching PRD when a feature's behavior changes.
