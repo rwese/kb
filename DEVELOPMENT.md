@@ -72,8 +72,7 @@ on the run instead of publishing.
 | `internal/db/` | SQLite storage: entries, articles, assets, attachments, FTS index, vectors |
 | `internal/search/` | BM25, hybrid ranking, and per-set score normalization (`ranker.go`) |
 | `internal/benchmark/` | JSONL retrieval benchmarks: dataset parser, metrics, isolated runner, baseline gate (`docs/prds/benchmark/`) |
-| `internal/embed/` | embedding providers: `ollama.go` (server) |
-| `internal/assets/` | asset + attachment import/staging/cleanup (KB-owned copies) |
+| `internal/embed/` | embedding providers: `ollama.go` (server) || `internal/assets/` | asset + attachment import/staging/cleanup (KB-owned copies) |
 | `internal/id/` | id generation (6 hex chars) |
 | `internal/config/` | config discovery, defaults, `~` expansion |
 | `docs/prds/` | feature specifications (export) |
@@ -232,3 +231,9 @@ Existing coverage is CLI-level (`internal/cli/*_test.go`) and unit-level (`inter
 ## PRDs
 
 Feature specs live under `docs/prds/` (e.g. `export/`) as the source of truth for behavior. Update the matching PRD when a feature's behavior changes.
+
+`docs/embeddings.md` is the provider matrix for the semantic tier: what each
+embedding provider requires, how to install/build it (ollama now, the onnx
+opt-in build variant with its guard), and the benchmark-only stand-ins.
+Update it when provider behavior, requirements, or the opt-in contract
+changes.

@@ -96,7 +96,7 @@ kb search --prompt "I am fixing the flickering list"
 
 ### Semantic search (optional)
 
-Keyword search matches what you write, not what you mean. For meaning-based search, set an embedder in the config:
+Keyword search matches what you write, not what you mean. For meaning-based search, set an embedder in the config; see [docs/embeddings.md](docs/embeddings.md) for the full provider matrix, Ollama requirements and install, and the onnx opt-in status.
 
 - **Ollama**: `embedder: ollama` with a model served locally (e.g. `nomic-embed-text`)
 
