@@ -48,20 +48,27 @@ tidy:
 # Full quality check
 check: fmt lint test
 
+# Run the ranking matrix (bm25 + hybrid weight balances) on a dataset and
+# print a comparison table; hybrid runs need Ollama + embedder: ollama
+bench-matrix DATASET TOP_K="3":
+    ./scripts/bench-matrix.sh {{DATASET}} --top-k {{TOP_K}}
+
 # Default recipe
 default: build
 
-# Release build for macOS (arm64)
-release-darwin-arm64:
-	CGO_CFLAGS="-DSQLITE_ENABLE_FTS5" GOOS=darwin GOARCH=arm64 go build -tags sqlite_fts5 -ldflags "-s -w" -o dist/kb-darwin-arm64 ./cmd/kb
+# Release build for macOS (arm64) - native on this machine
+release-darwin-arm64 VERSION="":
+	scripts/build.sh --os darwin --arch arm64 --version "{{VERSION}}"
 
-# Release build for macOS (amd64)
-release-darwin-amd64:
-	CGO_CFLAGS="-DSQLITE_ENABLE_FTS5" GOOS=darwin GOARCH=amd64 go build -tags sqlite_fts5 -ldflags "-s -w" -o dist/kb-darwin-amd64 ./cmd/kb
+# Release build for macOS (amd64) - native on this machine
+release-darwin-amd64 VERSION="":
+	scripts/build.sh --os darwin --arch amd64 --version "{{VERSION}}"
 
-# Release build for Linux
-release-linux:
-	CGO_CFLAGS="-DSQLITE_ENABLE_FTS5" GOOS=linux GOARCH=amd64 go build -tags sqlite_fts5 -ldflags "-s -w" -o dist/kb-linux-amd64 ./cmd/kb
+# Linux release builds run in docker: CGO cannot be crossed from macOS, and
+# a cgo-less linux build compiles but dies at runtime (see AGENTS.md).
+release-linux VERSION="dockerbuild":
+	docker run --rm -v "$(pwd)":/src -w /src --entrypoint bash golang:1.25-bookworm \
+		scripts/build.sh --os linux --arch amd64 --version "{{VERSION}}"
 
 # Build all release binaries
 release: release-darwin-arm64 release-darwin-amd64 release-linux
