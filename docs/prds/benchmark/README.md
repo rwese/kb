@@ -13,14 +13,25 @@ every `go test` run.
 
 ## Non-goals (first release)
 
-- Semantic/hybrid benchmarking: the harness scores BM25-porter retrieval only
-  (runs with no embedder configured). Hybrid experiments need deterministic
-  vectors and a recorded embedding contract.
 - Import into a real knowledgebase: benchmark KBs are throwaway.
 - Configurable title/body BM25 weights: the current engine is benchmarked as
   it is; the harness records the ranking configuration so weight experiments
   become a schema change later.
-- Fixing the known score-normalization inversion (see Limitations below).
+
+## Ranking switches
+
+`kb bench run` accepts `--algorithm (bm25|hybrid)`, `--bm25-weight`, and
+`--semantic-weight` (env: `KB_ALGORITHM`, `KB_BM25_WEIGHT`,
+`KB_SEMANTIC_WEIGHT`; config-file `ranker:` section as fallback). The default
+remains `bm25` so the committed gate stays deterministic without an embedder.
+
+- Hybrid runs embed every seeded document (content only, matching the
+  production ingest path) and each query via the configured embedder, then
+  re-rank with `search.Ranker` using the recorded weight balance. Embedding
+  failures or empty embeddings abort the run - no silent BM25 fallback.
+- The effective ranking configuration (algorithm, weights, derived name) is
+  recorded in every report; `kb bench diff` errors when the two reports'
+  ranking configurations differ.
 
 ## Dataset format (JSONL)
 
@@ -61,8 +72,8 @@ Validation rules (parse errors carry line numbers):
 - Article unit: rank by hit ID. Entry unit: map hits to `EntryID`,
   deduplicate keeping the first hit, then rank.
 - Truncation to `top_k` (default 3) happens after deduplication.
-- Scores are diagnostic (and, due to the normalization inversion below, may
-  read 1.0/0.0 misleadingly); metrics use grades and ranks only.
+- Scores are diagnostic (direction-correct per-query min-max values, not
+  thresholds); metrics use grades and ranks only.
 
 ## Metrics
 
@@ -137,12 +148,14 @@ Enforcement split, chosen so the gate never flakes on machine speed:
 
 ## CLI
 
-Hidden command (does not touch config discovery or a real KB):
+Hidden command (never touches a real KB; config discovery is consulted only
+for ranking defaults - flags and `KB_*` env variables override it):
 
 ```bash
 kb bench run --dataset <file.jsonl>                      # JSON report
 kb bench run --dataset <file.jsonl> --top-k 5
 kb bench run --dataset <file.jsonl> --baseline <base.json>
+kb bench run --dataset <file.jsonl> --algorithm hybrid --bm25-weight 0.3 --semantic-weight 0.7
 ```
 
 With `--baseline`, the report carries `baseline.pass` and
@@ -152,7 +165,7 @@ fails, and the command exits nonzero.
 ## Report
 
 JSON with dataset identity (id, sha256), effective configuration
-(top_k, candidate_policy, ranking name), informational latency (mean/p95/max,
+(top_k, candidate_policy, ranking name/algorithm/weights), informational latency (mean/p95/max,
 p95 nearest-rank, queries/sec), coverage counters, process memory deltas,
 per-unit aggregates, and per-query ranked lists (id, entry_id, diagnostic
 score, judged grade, candidate count) with metrics. Two runs on the same
@@ -169,6 +182,22 @@ totals; latency and memory values vary.
   `gcs` (GC cycles during the run).
 - `storage`: `db_bytes` — kb.db plus WAL/SHM sidecars at report time.
 
+## Algorithm comparison matrix
+
+`scripts/bench-matrix.sh <dataset.jsonl>` (recipe: `just bench-matrix
+<dataset>`) runs one dataset through bm25 plus a fixed set of hybrid weight
+balances (0.7/0.3, 0.5/0.5, 0.3/0.7, 0.1/0.9, 0.0/1.0) and prints a
+cross-configuration comparison table. Failed configurations are reported but
+do not abort the matrix. `testdata/paraphrase-v1.jsonl` is the companion
+fixture for semantic comparisons: single-token probes with a planted
+distractor per query, because the engine's FTS match is implicit-AND —
+candidates need lexical overlap, and the semantic tier decides ordering, not
+recall. Its control, coverage, and a perfect-embedder upper bound are pinned
+by `TestParaphraseFixtureComparison`. `testdata/scifact-v1.jsonl` (SciFact
+via BEIR, licenses in `scifact-README.md`) is the real-data fixture for
+scale; on it the AND-only candidate stage caps recall near 3% for the fixed
+weight set, so it measures the recall ceiling rather than weight sensitivity.
+
 ## Report diff
 
 `kb bench diff a.json b.json` (or `benchmark.Diff(a, b)`) compares two
@@ -179,12 +208,12 @@ the list of queries whose top-k ranking reordered.
 
 ## Limitations / known engine issues (benchmark targets, not fixed here)
 
-- **Score normalization inversion** (`db.normalizeScoreSet`): raw BM25 is
-  lower-is-better, so the min-max normalization maps the best hit to 0.0 and
-  sorts trained on it produce inverted diagnostics; single-hit sets map to
-  1.0. The reports above show this artifact (best hits score 1.0 via
-  single-hit sets, second-best score 0.0). A ranking fix must re-measure the
-  baseline explicitly.
+- **Score normalization direction**: `SQLite FTS5 bm25()` is negated
+  (best hit = most negative). `db.normalizeScoreSet` maps fall-on-best as
+  `(max - raw) / (max - min)` so every merged and re-ranked `Score` is
+  direction-correct (higher = more relevant, best hit 1.0). The lexical-v1
+  baseline floors were re-measured under this fix; ordering (not just
+  diagnostics) differed from the previous inverted ordering.
 - Tiny fixtures detect regressions but overfit easily; use dedicated
   experiment datasets for weight comparisons before adopting changes.
 - Seed dataset exemplifies lexical/stemming behavior (porter tokenizer);

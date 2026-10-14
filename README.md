@@ -36,6 +36,8 @@ User may choose to install it globally or in the currents project scope.
 
 Download the latest binary for your platform from [GitHub Releases](https://github.com/rwese/kb/releases).
 
+Linux/arm64 binaries are additionally published as Forgejo releases: pick the asset matching your platform / architecture (`kb-<os>-<arch>`, plus option-suffixed builds like `-onnx` once opt-in embedder variants ship; verify with the bundled `SHA256SUMS`).
+
 ## Quick Start
 
 ```bash
@@ -62,12 +64,16 @@ kb search "flickering"
 
 Everything is stored in one SQLite database, defaulting to `~/.local/share/kb/knowledgebase.db`; attached files go to `~/.local/share/kb/assets`.
 
-To change the defaults, create `~/.config/kb/config.yaml` (if no user config exists, kb also looks for a `.kb.yaml` in the current directory):
+To change the defaults, create `~/.config/kb/config.yaml` (kb also reads `$XDG_CONFIG_HOME/kb/config.yaml` when set, then `$XDG_CONFIG_DIRS/kb/config.yaml` for system-wide defaults, and finally a `.kb.yaml` in the current directory; `$KB_PATH` wins over all of them):
 
 ```yaml
 db_path: ~/.local/share/kb/knowledgebase.db
 assets_path: ~/.local/share/kb/assets
 top_k: 5   # default number of search results
+ranker:
+  algorithm: auto   # auto | bm25 | hybrid
+  bm25_weight: 0.3
+  semantic_weight: 0.7
 ```
 
 ## Search
@@ -94,7 +100,7 @@ Keyword search matches what you write, not what you mean. For meaning-based sear
 
 - **Ollama**: `embedder: ollama` with a model served locally (e.g. `nomic-embed-text`)
 
-With an embedder configured, search blends keyword and semantic ranking.
+With an embedder configured, search blends keyword and semantic ranking (hybrid). The blend weights default to 0.3 keyword / 0.7 semantic; tune them with `ranker.bm25_weight` / `ranker.semantic_weight` in the config, the `KB_BM25_WEIGHT` / `KB_SEMANTIC_WEIGHT` env variables, or the `--algorithm`, `--bm25-weight`, and `--semantic-weight` flags. Use `kb search --bm25-only` (or `--algorithm bm25`) to compare against pure keyword ranking.
 
 ## Export
 

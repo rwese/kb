@@ -7,6 +7,9 @@ dist/
 tmp-dist/
 *.exe
 
+# Benchmark matrix runs
+bench-results/
+
 # IDE
 .idea/
 .vscode/

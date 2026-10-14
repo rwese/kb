@@ -36,7 +36,22 @@ CGO_CFLAGS="-DSQLITE_ENABLE_FTS5" go test ./...
 | `just tidy` | `go mod tidy` |
 | `just check` | fmt + lint + test |
 | `just clean` | remove `bin/` |
-| `just release` | darwin-arm64, darwin-amd64, linux-amd64 into `dist/` |
+| `just release` | darwin-arm64, darwin-amd64 (+ linux via docker) into `dist/`, via `scripts/build.sh` |
+
+Release pipelines build the same matrix from `scripts/build.sh`:
+
+| pipeline | triggers | outputs |
+|---|---|---|
+| GitHub Actions (`.github/workflows/release.yml`) | `v*` tag push | darwin-arm64, darwin-amd64, linux-amd64 + `SHA256SUMS` |
+| Forgejo Actions (`.forgejo/workflows/release.yml`) | `v*` tag push or manual dispatch (mirrors do not emit push events) | linux-amd64, linux-arm64 + `SHA256SUMS` |
+
+The Forgejo pipeline cannot build darwin there (single linux docker runner;
+CGO cannot be crossed without a macOS SDK) - macOS binaries come from
+GitHub Actions or a local build. linux/arm64 is cross-built with
+`crossbuild-essential-arm64`. Forgejo prerequisites: Actions enabled on the
+mirrored repo (done) and a repo secret `RELEASE_TOKEN` (PAT with repo
+scope) for the release-upload step; without it the run keeps the artifacts
+on the run instead of publishing.
 
 ### Gotchas
 
@@ -115,21 +130,38 @@ This section is the authoritative description of how retrieval works, documented
 **Pipeline**
 
 1. **BM25 retrieval** - `SearchWithDeleted(query, topK*2, all)` runs two FTS5 queries (external-content, porter tokenizer): `articles_fts` (title + content) and `entry_attachments_fts` (title + file_name only; binary contents are never indexed). Both are kept in sync purely by triggers (`articles_ai/au/ad`, `entry_attachments_ai/au/ad`) - there is no background reindex.
-2. **Per-set normalization** - each candidate set is linearly normalized to 0-1 at the database layer (`normalizeScoreSet`) before merging; raw BM25 values from separate FTS tables are not comparable. A single-hit (or all-equal) set maps to 1.0.
-3. **Hybrid re-rank (`Ranker.HybridSearch`, article hits only)** - if `cfg.Embedder == "ollama"` and `--bm25-only` is not set, embed the query and re-rank article hits only; attachment hits keep their per-set normalized BM25 score:
-   - `BM25Score` = min-max normalized over the article hits of *this query* (best hit 1.0, worst 0.0, a lone hit 0.5) - plain linear rescaling, `NormalizeBM25` in `ranker.go`.
+2. **Per-set normalization** - each candidate set is linearly normalized to 0-1 at the database layer (`normalizeScoreSet`) before merging; raw BM25 values from separate FTS tables are not comparable. SQLite FTS5 negates BM25 (best hit = most negative raw score), so the mapping is `(max - raw) / (max - min)`: best hit 1.0, worst 0.0, direction-correct (higher = more relevant). A single-hit (or all-equal) set maps to 1.0.
+3. **Hybrid re-rank (`Ranker.HybridSearch`, article hits only)** - when the resolved algorithm is `hybrid` (see [Ranking switches](#ranking-switches)), embed the query and re-rank article hits only; attachment hits keep their per-set normalized BM25 score:
+   - `BM25Score` = min-max rescaled over the article hits of *this query* (best hit 1.0, worst 0.0, a lone hit 0.5) - input is already direction-correct per-set normalized BM25, so this is an identity in range, `NormalizeBM25` in `ranker.go`.
    - `SemanticScore` = raw cosine similarity between query and article vector (`db.GetVector` + `embed.Cosine`), *not* min-max normalized. Nomic-embed-text cosines cluster roughly 0.6-0.95 for real matches.
    - `Score = BM25Weight * BM25Score + SemanticWeight * SemanticScore`, then a global descending sort mixes article and attachment hits.
 
+**Ranking switches**
+
+Algorithm and weights are exposed at three levels; explicit beats implicit:
+
+1. **Flags**: `kb search`/`kb bench run --algorithm (auto|bm25|hybrid) --bm25-weight <f> --semantic-weight <f>`; `kb search --bm25-only` remains a shortcut for `--algorithm bm25`.
+2. **Env**: `KB_ALGORITHM`, `KB_BM25_WEIGHT`, `KB_SEMANTIC_WEIGHT` (flag beats env).
+3. **Config files** (XDG order: `$KB_PATH` → `$XDG_CONFIG_HOME/kb/config.yaml` (default `~/.config/kb`) → `$XDG_CONFIG_DIRS/kb/config.yaml` (default `/etc/xdg`) → `.kb.yaml`):
+
+   ```yaml
+   ranker:
+     algorithm: auto   # auto | bm25 | hybrid
+     bm25_weight: 0.3
+     semantic_weight: 0.7
+   ```
+
+`auto` (the default) resolves to `hybrid` when `embedder: ollama`, else `bm25`. An explicitly requested `hybrid` without an embedder is a hard error in both `search` and `bench run`. In `search`, only `auto` keeps the old silent BM25 fallback on query-embedding failure; an explicit `hybrid` fails.
+
 **What the weights mean**
 
-- `BM25Weight = 0.3` (`search.DefaultRanker`, hardcoded, `NewRanker` constructor is not wired to config): lexical signal - exact keyword match strength as the precision/tiebreak component.
-- `SemanticWeight = 0.7`: meaning signal - paraphrase/intent match via embeddings as the dominant component.
+- `BM25Weight = 0.3` (default, `config.DefaultBM25Weight`): lexical signal - exact keyword match strength as the precision/tiebreak component.
+- `SemanticWeight = 0.7` (default, `config.DefaultSemanticWeight`): meaning signal - paraphrase/intent match via embeddings as the dominant component.
 
 **Fallbacks**
 
-- Missing or erroring article vector: semantic score 0, result caps at `0.3 * BM25Score`.
-- Query embedding failure: silently degrades to the merged BM25 results.
+- Missing or erroring article vector: semantic score 0, result caps at `BM25Weight * BM25Score`.
+- Query embedding failure: `auto` silently degrades to the merged BM25 results; explicit `hybrid` errors.
 - `embedder: none` (the config default): no semantic tier at all, BM25-only.
 
 **Known limitations** (candidate optimization targets)
@@ -152,12 +184,42 @@ scored with precision@k / recall@k / MRR@k / nDCG@k per unit (article, entry).
   committed baseline (`testdata/baseline-v1.json`, bound to the exact dataset
   SHA-256) on every `go test` run — the gate must never be bypassed or
   auto-relaxed.
-- Manual experiments:
+- Manual experiments (each report records its ranking configuration -
+  algorithm plus hybrid weights - and `kb bench diff` refuses to compare runs
+  whose ranking configuration differs):
 
   ```bash
   bin/kb bench run --dataset internal/benchmark/testdata/lexical-v1.jsonl
   bin/kb bench run --dataset <experiment.jsonl> --baseline <floor.json>
+  bin/kb bench run --dataset <experiment.jsonl> --algorithm hybrid --bm25-weight 0.3 --semantic-weight 0.7
   ```
+
+  Hybrid runs embed the seeded documents and each query via the configured
+  embedder (Ollama must be up; embedding failures abort the run instead of
+  silently falling back to BM25). Flags and `KB_ALGORITHM` /
+  `KB_BM25_WEIGHT` / `KB_SEMANTIC_WEIGHT` override the config-file `ranker:`
+  section; with no explicit choice a bench defaults to bm25.
+- Algorithm comparison matrix: `just bench-matrix <dataset.jsonl>` (or
+  `scripts/bench-matrix.sh`) runs bm25 plus a fixed set of hybrid weight
+  balances (0.7/0.3, 0.5/0.5, 0.3/0.7, 0.1/0.9, 0.0/1.0) and prints a
+  cross-configuration table (precision/recall/MRR/nDCG/hit1 per unit, best
+  per column marked `*`). Reports land in `bench-results/` for `kb bench
+  diff` on same-config re-runs.
+- `testdata/paraphrase-v1.jsonl` is the algorithm-comparison fixture: single
+  token probes with a planted distractor per query (the engine's FTS match
+  is implicit-AND, so candidates need lexical overlap; the semantic tier
+  decides ordering, not recall). `TestParaphraseFixtureComparison` keeps it
+  honest: control retrieves nothing, no query is empty, and a perfect
+  embedder reaches hit1_rate 1.
+- `testdata/scifact-v1.jsonl` is the real-data fixture (600 SciFact
+  abstracts, 153 queries; provenance and licenses in
+  `testdata/scifact-README.md`, generated by
+  `scripts/make-scifact-dataset.py` from the BEIR zip). BEIR's layperson
+  claims vs jargon abstracts expose the recall ceiling of AND-only FTS
+  matching: ~96% of its queries retrieve zero candidates regardless of
+  ranking weights — the tooling runs it to quantify that ceiling, and real
+  gains there need engine-level query relaxation (OR fallback), not weight
+  tuning.
 
   Violating floors print the full report first and exit nonzero. Floors are
   measured values; edit them only with an explicit reviewed change after
