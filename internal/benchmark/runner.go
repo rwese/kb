@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/rwese/kb/internal/db"
+	"github.com/rwese/kb/internal/embed"
+	"github.com/rwese/kb/internal/search"
 )
 
 const (
@@ -35,12 +37,24 @@ type Config struct {
 	TopK int
 	// CandidatePolicy must be CandidatePolicyUnbounded (or empty for it).
 	CandidatePolicy string
+	// Ranking selects the ranking under test. The zero value selects the
+	// default BM25 ranking.
+	Ranking RankingConfig
+	// Embedder supplies document and query embeddings; required exactly
+	// when Ranking.Algorithm is hybrid.
+	Embedder embed.Embedder
+	// EmbeddingModel is recorded with the stored vectors as metadata.
+	EmbeddingModel string
 }
 
 // RankingConfig describes the deterministic configuration of the ranking
-// being benchmarked; recorded in reports and baselines.
+// being benchmarked; recorded in reports and compared by diff. Name is
+// derived from the other fields when empty.
 type RankingConfig struct {
-	Name string `json:"name"`
+	Name           string  `json:"name"`
+	Algorithm      string  `json:"algorithm"`
+	BM25Weight     float64 `json:"bm25_weight"`
+	SemanticWeight float64 `json:"semantic_weight"`
 }
 
 // ConfigReport records the effective run configuration.
@@ -199,6 +213,11 @@ func runInDir(dataset Dataset, cfg Config, dir string) (Report, error) {
 	if err := seed(database, dataset); err != nil {
 		return Report{}, fmt.Errorf("seed bench db: %w", err)
 	}
+	if cfg.Ranking.Algorithm == search.AlgorithmHybrid {
+		if err := embedArticles(context.Background(), database, dataset, cfg); err != nil {
+			return Report{}, err
+		}
+	}
 	memAfterSeed := memSnapshot()
 
 	report := Report{
@@ -207,7 +226,7 @@ func runInDir(dataset Dataset, cfg Config, dir string) (Report, error) {
 		Config: ConfigReport{
 			TopK:            cfg.TopK,
 			CandidatePolicy: cfg.CandidatePolicy,
-			Ranking:         RankingConfig{Name: "bm25-porter-v1"},
+			Ranking:         cfg.Ranking,
 		},
 		Aggregate: map[string]UnitAggregate{},
 		Coverage: CoverageReport{
@@ -311,6 +330,23 @@ func runQuery(ctx context.Context, database *db.DB, q Query, cfg Config) (QueryR
 	}
 	latency := time.Since(start)
 
+	// Hybrid re-ranking: embed the query and rescore with the configured
+	// weight balance. Runs are expected to be reproducible, so an embedding
+	// failure or an empty embedding is a hard error, never a silent BM25
+	// fallback. Controls skip re-ranking: they must retrieve nothing, and
+	// re-ranking cannot remove hits anyway.
+	if cfg.Ranking.Algorithm == search.AlgorithmHybrid && !q.IsControl() {
+		queryEmb, err := cfg.Embedder.Embed(ctx, q.Text)
+		if err != nil {
+			return QueryReport{}, fmt.Errorf("embed query: %w", err)
+		}
+		if len(queryEmb) == 0 {
+			return QueryReport{}, fmt.Errorf("embed query: empty embedding")
+		}
+		ranker := search.NewRanker(cfg.Ranking.BM25Weight, cfg.Ranking.SemanticWeight)
+		results = ranker.HybridSearch(ctx, results, database, queryEmb)
+	}
+
 	// Deterministic order: score descending, then ID ascending. SQL and the
 	// db merge have no explicit tie-breaker, so the benchmark fixes ties
 	// itself before truncation.
@@ -398,7 +434,71 @@ func normalizeConfig(cfg Config) (Config, error) {
 	if cfg.CandidatePolicy != CandidatePolicyUnbounded {
 		return Config{}, fmt.Errorf("unknown candidate policy %q", cfg.CandidatePolicy)
 	}
+
+	// Default weights for hybrid runs that leave both unset; callers with a
+	// configured balance (e.g. via config discovery) set both explicitly.
+	if cfg.Ranking.Algorithm == "" {
+		cfg.Ranking.Algorithm = search.AlgorithmBM25
+	}
+	switch cfg.Ranking.Algorithm {
+	case search.AlgorithmBM25:
+		// Weights are inert for pure BM25 retrieval.
+	case search.AlgorithmHybrid:
+		if cfg.Embedder == nil {
+			return Config{}, fmt.Errorf("ranking algorithm %q requires an embedder", cfg.Ranking.Algorithm)
+		}
+		if cfg.Ranking.BM25Weight < 0 || cfg.Ranking.SemanticWeight < 0 {
+			return Config{}, fmt.Errorf("ranking weights must be non-negative")
+		}
+		if cfg.Ranking.BM25Weight == 0 && cfg.Ranking.SemanticWeight == 0 {
+			def := search.DefaultRanker()
+			cfg.Ranking.BM25Weight = def.BM25Weight
+			cfg.Ranking.SemanticWeight = def.SemanticWeight
+		}
+		if cfg.Ranking.BM25Weight+cfg.Ranking.SemanticWeight == 0 {
+			return Config{}, fmt.Errorf("ranking weights must sum to a positive value")
+		}
+	default:
+		return Config{}, fmt.Errorf("unknown ranking algorithm %q", cfg.Ranking.Algorithm)
+	}
+	if cfg.Ranking.Name == "" {
+		cfg.Ranking.Name = rankingName(cfg.Ranking)
+	}
 	return cfg, nil
+}
+
+// rankingName derives the stable ranking name recorded in reports and
+// compared by diff: the BM25 engine keeps its historic name; hybrid names
+// encode the weight balance.
+func rankingName(r RankingConfig) string {
+	if r.Algorithm == search.AlgorithmHybrid {
+		return fmt.Sprintf("hybrid-bm25-%.2g-semantic-%.2g", r.BM25Weight, r.SemanticWeight)
+	}
+	return "bm25-porter-v1"
+}
+
+// embedArticles embeds every dataset document and stores the vector under
+// the article id, mirroring the production ingestion path (content-only
+// embeddings). Missing vectors make HybridSearch fall back to BM25-only for
+// that hit.
+func embedArticles(ctx context.Context, database *db.DB, dataset Dataset, cfg Config) error {
+	texts := make([]string, len(dataset.Documents))
+	for i, d := range dataset.Documents {
+		texts[i] = d.Content
+	}
+	vectors, err := cfg.Embedder.EmbedBatch(ctx, texts)
+	if err != nil {
+		return fmt.Errorf("embed documents: %w", err)
+	}
+	for i, d := range dataset.Documents {
+		if len(vectors[i]) == 0 {
+			continue
+		}
+		if err := database.SaveVector(d.ID, vectors[i], cfg.EmbeddingModel); err != nil {
+			return fmt.Errorf("save vector %s: %w", d.ID, err)
+		}
+	}
+	return nil
 }
 
 // avg averages every stride-th element of sums starting at offset.

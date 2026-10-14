@@ -1,6 +1,8 @@
 // Package bench wires the hidden `kb bench` command: it runs JSONL
 // retrieval benchmarks against an isolated KB seeded from the dataset, so it
-// never touches a real knowledgebase or config discovery.
+// never touches a real knowledgebase. Config discovery is consulted only for
+// ranking defaults (algorithm, weights, embedder); flags and KB_* env
+// variables override them.
 package bench
 
 import (
@@ -11,6 +13,9 @@ import (
 	"os"
 
 	"github.com/rwese/kb/internal/benchmark"
+	"github.com/rwese/kb/internal/config"
+	"github.com/rwese/kb/internal/embed"
+	"github.com/rwese/kb/internal/search"
 	"github.com/urfave/cli/v3"
 )
 
@@ -35,10 +40,71 @@ func newRunCommand() *cli.Command {
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "dataset", Aliases: []string{"d"}, Usage: "Path to a JSONL benchmark dataset (required)"},
 			&cli.IntFlag{Name: "top-k", Aliases: []string{"k"}, Usage: "Ranking cutoff (default 3)"},
+			&cli.StringFlag{
+				Name:    "algorithm",
+				Usage:   "Ranking algorithm: bm25 or hybrid (default bm25)",
+				Sources: cli.EnvVars("KB_ALGORITHM"),
+			},
+			&cli.FloatFlag{
+				Name:    "bm25-weight",
+				Usage:   "Hybrid weight of the normalized BM25 score (default 0.3)",
+				Sources: cli.EnvVars("KB_BM25_WEIGHT"),
+			},
+			&cli.FloatFlag{
+				Name:    "semantic-weight",
+				Usage:   "Hybrid weight of the query cosine similarity (default 0.7)",
+				Sources: cli.EnvVars("KB_SEMANTIC_WEIGHT"),
+			},
 			&cli.StringFlag{Name: "baseline", Aliases: []string{"b"}, Usage: "Optional baseline JSON; fails with nonzero exit when floors are violated"},
 		},
 		Action: runAction,
 	}
+}
+
+// resolveRanking builds the ranking config from flags/env (via Sources)
+// over config discovery over package defaults, and returns the embedder the
+// hybrid algorithm needs.
+func resolveRanking(cmd *cli.Command) (benchmark.RankingConfig, embed.Embedder, string, error) {
+	cfg, err := config.Discover()
+	if err != nil {
+		return benchmark.RankingConfig{}, nil, "", err
+	}
+
+	algorithm := cmd.String("algorithm")
+	if algorithm == "" {
+		algorithm = cfg.Ranker.Algorithm
+	}
+	// Auto is a search-side convenience; a benchmark needs a concrete
+	// algorithm so reports stay reproducible.
+	if algorithm == "" || algorithm == search.AlgorithmAuto {
+		algorithm = search.AlgorithmBM25
+	}
+
+	bm25Weight := cmd.Float("bm25-weight")
+	if bm25Weight == 0 {
+		bm25Weight = cfg.Ranker.BM25Weight
+	}
+	semanticWeight := cmd.Float("semantic-weight")
+	if semanticWeight == 0 {
+		semanticWeight = cfg.Ranker.SemanticWeight
+	}
+
+	// Weights are inert for pure BM25 retrieval; recording them anyway
+	// would make those reports incomparable with weight-less gate runs.
+	rankCfg := benchmark.RankingConfig{Algorithm: algorithm}
+	if algorithm == search.AlgorithmHybrid {
+		rankCfg.BM25Weight = bm25Weight
+		rankCfg.SemanticWeight = semanticWeight
+	}
+
+	var emb embed.Embedder
+	if algorithm == search.AlgorithmHybrid {
+		if cfg.Embedder != "ollama" {
+			return benchmark.RankingConfig{}, nil, "", fmt.Errorf("algorithm %q requires an embedder (config embedder: %s)", algorithm, cfg.Embedder)
+		}
+		emb = embed.NewEmbedder(cfg)
+	}
+	return rankCfg, emb, cfg.Ollama.Model, nil
 }
 
 func runAction(ctx context.Context, cmd *cli.Command) error {
@@ -56,7 +122,17 @@ func runAction(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	report, err := benchmark.Run(dataset, benchmark.Config{TopK: cmd.Int("top-k")})
+	rankCfg, embedder, embeddingModel, err := resolveRanking(cmd)
+	if err != nil {
+		return err
+	}
+
+	report, err := benchmark.Run(dataset, benchmark.Config{
+		TopK:           cmd.Int("top-k"),
+		Ranking:        rankCfg,
+		Embedder:       embedder,
+		EmbeddingModel: embeddingModel,
+	})
 	if err != nil {
 		return err
 	}

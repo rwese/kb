@@ -23,6 +23,7 @@ func NewConfigCommand() *cli.Command {
 			fmt.Printf("Assets:    %s\n", cfg.AssetsPath)
 			fmt.Printf("Embedder:  %s\n", cfg.Embedder)
 			fmt.Printf("Top K:     %d\n", cfg.TopK)
+			fmt.Printf("Ranker:    %s (bm25 %.2f / semantic %.2f)\n", cfg.Ranker.Algorithm, cfg.Ranker.BM25Weight, cfg.Ranker.SemanticWeight)
 
 			// Check if db exists
 			if _, err := os.Stat(cfg.DBPath); os.IsNotExist(err) {

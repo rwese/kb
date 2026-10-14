@@ -24,6 +24,21 @@ func NewSearchCommand() *cli.Command {
 			&cli.StringFlag{Name: "prompt", Aliases: []string{"p"}, Usage: "Final prompt (weighted higher)"},
 			&cli.IntFlag{Name: "top-k", Aliases: []string{"k"}, Usage: "Number of results"},
 			&cli.StringFlag{Name: "format", Aliases: []string{"o"}, Usage: "Output format", DefaultText: "markdown"},
+			&cli.StringFlag{
+				Name:    "algorithm",
+				Usage:   "Ranking algorithm: auto, bm25, or hybrid (default from config ranker.algorithm)",
+				Sources: cli.EnvVars("KB_ALGORITHM"),
+			},
+			&cli.FloatFlag{
+				Name:    "bm25-weight",
+				Usage:   "Hybrid weight of the normalized BM25 score (default from config ranker.bm25_weight)",
+				Sources: cli.EnvVars("KB_BM25_WEIGHT"),
+			},
+			&cli.FloatFlag{
+				Name:    "semantic-weight",
+				Usage:   "Hybrid weight of the query cosine similarity (default from config ranker.semantic_weight)",
+				Sources: cli.EnvVars("KB_SEMANTIC_WEIGHT"),
+			},
 			&cli.BoolFlag{Name: "all", Usage: "Include deleted entries"},
 			&cli.BoolFlag{Name: "bm25-only", Usage: "Use BM25-only search (skip semantic)"},
 			&cli.BoolFlag{Name: "content", Usage: "Include a content excerpt for the best-matching article of each entry"},
@@ -57,6 +72,11 @@ func NewSearchCommand() *cli.Command {
 				topK = cfg.TopK
 			}
 
+			algorithm, bm25Weight, semanticWeight, explicitRanking, err := resolveRanking(cmd, cfg)
+			if err != nil {
+				return err
+			}
+
 			// Get BM25 results
 			results, err := database.SearchWithDeleted(query, topK*2, cmd.Bool("all"))
 			if err != nil {
@@ -68,15 +88,25 @@ func NewSearchCommand() *cli.Command {
 				return nil
 			}
 
-			// Try hybrid search if ollama embeddings are available
-			if !cmd.Bool("bm25-only") && cfg.Embedder == "ollama" {
+			// Hybrid re-ranking when the resolved algorithm asks for it.
+			// An explicit hybrid request is a hard error on embedder
+			// trouble; the auto default falls back to BM25 like before.
+			if algorithm == search.AlgorithmHybrid {
 				e := embed.NewEmbedder(cfg)
-
-				// Compute query embedding
-				queryEmb, err := e.Embed(ctx, query)
-				if err == nil && queryEmb != nil {
-					// Apply hybrid ranking
-					ranker := search.DefaultRanker()
+				queryEmb, embedErr := e.Embed(ctx, query)
+				switch {
+				case embedErr != nil:
+					if explicitRanking {
+						return fmt.Errorf("embed query: %w", embedErr)
+					}
+					fmt.Fprintf(os.Stderr, "Warning: query embedding failed, falling back to BM25: %v\n", embedErr)
+				case queryEmb == nil:
+					if explicitRanking {
+						return fmt.Errorf("embed query: empty embedding")
+					}
+					fmt.Fprintln(os.Stderr, "Warning: empty query embedding, falling back to BM25")
+				default:
+					ranker := search.NewRanker(bm25Weight, semanticWeight)
 					results = ranker.HybridSearch(ctx, results, database, queryEmb)
 				}
 			}
@@ -89,6 +119,46 @@ func NewSearchCommand() *cli.Command {
 			return formatSearchResults(results, cmd.String("format"), cmd.Bool("bm25-only"), cmd.Bool("content"), cmd.Bool("full-content"))
 		},
 	}
+}
+
+// resolveRanking applies flag/env (via Sources) over config discovery:
+// --bm25-only forces bm25, otherwise --algorithm wins over
+// ranker.algorithm, defaulting to auto. Weight flags override
+// ranker weights, which Discover already defaulted.
+func resolveRanking(cmd *cli.Command, cfg *config.Config) (algorithm string, bm25Weight, semanticWeight float64, explicitRanking bool, err error) {
+	algorithm = cmd.String("algorithm")
+	if algorithm == "" {
+		algorithm = cfg.Ranker.Algorithm
+	}
+	if !search.ValidAlgorithm(algorithm) {
+		return "", 0, 0, false, fmt.Errorf("unknown ranking algorithm %q (want auto, bm25, or hybrid)", algorithm)
+	}
+
+	bm25Weight = cmd.Float("bm25-weight")
+	if bm25Weight == 0 {
+		bm25Weight = cfg.Ranker.BM25Weight
+	}
+	semanticWeight = cmd.Float("semantic-weight")
+	if semanticWeight == 0 {
+		semanticWeight = cfg.Ranker.SemanticWeight
+	}
+	if bm25Weight < 0 || semanticWeight < 0 {
+		return "", 0, 0, false, fmt.Errorf("ranking weights must be non-negative")
+	}
+
+	if cmd.Bool("bm25-only") {
+		algorithm = search.AlgorithmBM25
+	}
+	embedderAvailable := cfg.Embedder == "ollama"
+	resolved, err := search.ResolveAlgorithm(algorithm, embedderAvailable)
+	if err != nil {
+		return "", 0, 0, false, err
+	}
+	if resolved == search.AlgorithmHybrid && !embedderAvailable {
+		return "", 0, 0, false, fmt.Errorf("algorithm %q requires an embedder (config embedder: %s)", resolved, cfg.Embedder)
+	}
+	explicitRanking = cmd.String("algorithm") != "" || cmd.Bool("bm25-only")
+	return resolved, bm25Weight, semanticWeight, explicitRanking, nil
 }
 
 func formatSearchResults(results []db.SearchResult, format string, bm25Only, content, fullContent bool) error {
