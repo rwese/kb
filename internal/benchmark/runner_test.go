@@ -46,6 +46,8 @@ func TestRunnerDeterministicAcrossRuns(t *testing.T) {
 
 	stable := func(r Report) string {
 		r.Latency = LatencyReport{}
+		r.Mem = MemReport{}
+		r.Storage = StorageReport{}
 		for i := range r.Queries {
 			r.Queries[i].LatencyMS = 0
 		}

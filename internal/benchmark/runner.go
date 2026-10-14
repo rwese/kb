@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"time"
 
@@ -65,14 +66,17 @@ type RankedHit struct {
 }
 
 // QueryReport is the outcome of one query: the deterministic ranked list,
-// its latency, and its metrics (nil for controls).
+// its latency, and its metrics (nil for controls). Candidates is the number
+// of raw matches returned by the DB before unit mapping, deduplication, and
+// truncation.
 type QueryReport struct {
-	ID        string      `json:"id"`
-	Unit      string      `json:"unit"`
-	Control   bool        `json:"control"`
-	LatencyMS float64     `json:"latency_ms"`
-	Ranked    []RankedHit `json:"ranked"`
-	Metrics   *Metrics    `json:"metrics,omitempty"`
+	ID         string      `json:"id"`
+	Unit       string      `json:"unit"`
+	Control    bool        `json:"control"`
+	LatencyMS  float64     `json:"latency_ms"`
+	Candidates int         `json:"candidates"`
+	Ranked     []RankedHit `json:"ranked"`
+	Metrics    *Metrics    `json:"metrics,omitempty"`
 }
 
 // UnitAggregate is the macro average over a unit's non-control queries.
@@ -82,6 +86,9 @@ type UnitAggregate struct {
 	Recall    float64 `json:"recall"`
 	MRR       float64 `json:"mrr"`
 	NDCG      float64 `json:"ndcg"`
+	// Hit1Rate is the fraction of queries whose rank-1 hit is positively
+	// judged.
+	Hit1Rate float64 `json:"hit1_rate"`
 }
 
 // LatencyReport summarizes per-query retrieval latency. Latency is
@@ -91,6 +98,45 @@ type LatencyReport struct {
 	P95MS   float64 `json:"p95_ms"`
 	MaxMS   float64 `json:"max_ms"`
 	TotalMS float64 `json:"total_ms"`
+	QPS     float64 `json:"qps"`
+}
+
+// CoverageReport counts what retrieval found across the whole dataset.
+type CoverageReport struct {
+	// Entries and Documents are the dataset totals.
+	Entries   int `json:"entries"`
+	Documents int `json:"documents"`
+	// DocumentsRecovered is the number of distinct documents retrieved at
+	// least once by any query (all units, counted after each query's
+	// truncation to top_k).
+	DocumentsRecovered int `json:"documents_recovered"`
+	// NoHitQueries counts non-control queries that retrieved no hits.
+	NoHitQueries int `json:"no_hit_queries"`
+	// ZeroRecallQueries counts non-control queries whose recall is 0.
+	ZeroRecallQueries int `json:"zero_recall_queries"`
+	// Controls is the number of no-match control queries.
+	Controls int `json:"controls"`
+}
+
+// MemReport summarizes process memory cost, deltas between phases. Heap
+// sampling uses runtime.ReadMemStats after each phase; values are
+// informational and vary across machines and runs.
+type MemReport struct {
+	// SeedAllocBytes is TotalAlloc during dataset import.
+	SeedAllocBytes int64 `json:"seed_alloc_bytes"`
+	// RetrievalAllocBytes is TotalAlloc across all queries.
+	RetrievalAllocBytes int64 `json:"retrieval_alloc_bytes"`
+	// HeapAllocPeakBytes is the largest HeapAlloc observed between queries
+	// during retrieval.
+	HeapAllocPeakBytes int64 `json:"heap_alloc_peak_bytes"`
+	// GCs is the number of GC cycles during seeding + retrieval.
+	GCs int64 `json:"gcs"`
+}
+
+// StorageReport is the disk footprint of the benchmark KB. DBBytes covers
+// the main database file plus WAL/SHM sidecars at report time.
+type StorageReport struct {
+	DBBytes int64 `json:"db_bytes"`
 }
 
 // BaselineResult records the outcome of the baseline check attached to a
@@ -106,8 +152,11 @@ type Report struct {
 	Dataset   DatasetInfo              `json:"dataset"`
 	Config    ConfigReport             `json:"config"`
 	Latency   LatencyReport            `json:"latency"`
+	Coverage  CoverageReport           `json:"coverage"`
+	Mem       MemReport                `json:"mem"`
 	Aggregate map[string]UnitAggregate `json:"aggregate"`
 	Queries   []QueryReport            `json:"queries"`
+	Storage   StorageReport            `json:"storage"`
 	Baseline  *BaselineResult          `json:"baseline,omitempty"`
 }
 
@@ -145,9 +194,12 @@ func runInDir(dataset Dataset, cfg Config, dir string) (Report, error) {
 	if err := database.Init(); err != nil {
 		return Report{}, fmt.Errorf("init bench db: %w", err)
 	}
+
+	memBefore := memSnapshot()
 	if err := seed(database, dataset); err != nil {
 		return Report{}, fmt.Errorf("seed bench db: %w", err)
 	}
+	memAfterSeed := memSnapshot()
 
 	report := Report{
 		Version: ReportVersion,
@@ -158,9 +210,19 @@ func runInDir(dataset Dataset, cfg Config, dir string) (Report, error) {
 			Ranking:         RankingConfig{Name: "bm25-porter-v1"},
 		},
 		Aggregate: map[string]UnitAggregate{},
+		Coverage: CoverageReport{
+			Entries:   len(dataset.Entries),
+			Documents: len(dataset.Documents),
+		},
 	}
+	heapPeak := int64(0)
+	gcAtStart := memAfterSeed.NumGC
 
-	byUnit := map[string][]float64{} // per-unit metric sums: unit -> [p, r, mrr, ndcg]
+	var memOut MemReport
+	memOut.SeedAllocBytes = int64(memAfterSeed.TotalAlloc) - int64(memBefore.TotalAlloc)
+
+	recovered := map[string]bool{}
+	byUnit := map[string][]float64{} // per-unit metric sums: unit -> [p, r, mrr, ndcg, hit1]
 
 	for _, q := range dataset.Queries {
 		qr, err := runQuery(context.Background(), database, q, cfg)
@@ -169,34 +231,74 @@ func runInDir(dataset Dataset, cfg Config, dir string) (Report, error) {
 		}
 		report.Queries = append(report.Queries, qr)
 
+		ms := memSnapshot()
+		if h := int64(ms.HeapAlloc); h > heapPeak {
+			heapPeak = h
+		}
+		memOut.RetrievalAllocBytes += int64(ms.TotalAlloc) - int64(memAfterSeed.TotalAlloc)
+		memAfterSeed = ms
+
+		for _, r := range qr.Ranked {
+			if id := hitDocumentID(q, r); id != "" {
+				recovered[id] = true
+			}
+		}
+
 		if qr.Control {
 			// Controls must retrieve nothing at all; unjudged hits would
 			// silently grade 0 and hide dataset contamination.
 			if len(qr.Ranked) != 0 {
 				return Report{}, fmt.Errorf("query %s: no-match control retrieved %d hits", q.ID, len(qr.Ranked))
 			}
+			report.Coverage.Controls++
 			continue
+		}
+
+		if len(qr.Ranked) == 0 {
+			report.Coverage.NoHitQueries++
+		}
+		if qr.Metrics != nil && qr.Metrics.Recall == 0 {
+			report.Coverage.ZeroRecallQueries++
 		}
 
 		m := qr.Metrics
 		sums := byUnit[q.Unit]
-		sums = append(sums, m.Precision, m.Recall, m.MRR, m.NDCG)
+		hit1 := 0.0
+		if len(qr.Ranked) > 0 && qr.Ranked[0].Grade > 0 {
+			hit1 = 1
+		}
+		sums = append(sums, m.Precision, m.Recall, m.MRR, m.NDCG, hit1)
 		byUnit[q.Unit] = sums
 	}
 
 	for unit, sums := range byUnit {
-		n := len(sums) / 4
+		n := len(sums) / 5
 		report.Aggregate[unit] = UnitAggregate{
 			Queries:   n,
-			Precision: avg(sums, 4, 0, n),
-			Recall:    avg(sums, 4, 1, n),
-			MRR:       avg(sums, 4, 2, n),
-			NDCG:      avg(sums, 4, 3, n),
+			Precision: avg(sums, 5, 0, n),
+			Recall:    avg(sums, 5, 1, n),
+			MRR:       avg(sums, 5, 2, n),
+			NDCG:      avg(sums, 5, 3, n),
+			Hit1Rate:  avg(sums, 5, 4, n),
 		}
 	}
 
+	memOut.HeapAllocPeakBytes = heapPeak
+	memOut.GCs = int64(memAfterSeed.NumGC) - int64(gcAtStart)
+	report.Mem = memOut
+	report.Storage = storageReport(dir)
+	report.Coverage.DocumentsRecovered = len(recovered)
 	report.Latency = latencyReport(report.Queries)
 	return report, nil
+}
+
+// hitDocumentID maps one ranked hit back to a document id where possible:
+// article-unit hits ARE document ids; entry-unit hits are entries.
+func hitDocumentID(q Query, r RankedHit) string {
+	if q.Unit == UnitArticle {
+		return r.ID
+	}
+	return ""
 }
 
 // runQuery retrieves, ranks deterministically, deduplicates for the query
@@ -245,11 +347,12 @@ func runQuery(ctx context.Context, database *db.DB, q Query, cfg Config) (QueryR
 	}
 
 	qr := QueryReport{
-		ID:        q.ID,
-		Unit:      q.Unit,
-		Control:   q.IsControl(),
-		LatencyMS: float64(latency.Microseconds()) / 1000.0,
-		Ranked:    ranked,
+		ID:         q.ID,
+		Unit:       q.Unit,
+		Control:    q.IsControl(),
+		LatencyMS:  float64(latency.Microseconds()) / 1000.0,
+		Candidates: len(results),
+		Ranked:     ranked,
 	}
 
 	if !q.IsControl() {
@@ -330,10 +433,34 @@ func latencyReport(queries []QueryReport) LatencyReport {
 	if idx >= len(latencies) {
 		idx = len(latencies) - 1
 	}
+	qps := 0.0
+	if total > 0 {
+		qps = float64(len(latencies)) * 1000.0 / total
+	}
 	return LatencyReport{
 		MeanMS:  total / float64(len(latencies)),
 		P95MS:   latencies[idx],
 		MaxMS:   latencies[len(latencies)-1],
 		TotalMS: total,
+		QPS:     qps,
 	}
+}
+
+// memSnapshot captures the runtime memory counters we report on.
+func memSnapshot() runtime.MemStats {
+	var ms runtime.MemStats
+	runtime.ReadMemStats(&ms)
+	return ms
+}
+
+// storageReport sums the benchmark KB's file footprint (main db plus WAL and
+// shared-memory sidecars); missing files count as zero bytes.
+func storageReport(dir string) StorageReport {
+	var total int64
+	for _, name := range []string{"kb.db", "kb.db-wal", "kb.db-shm"} {
+		if info, err := os.Stat(filepath.Join(dir, name)); err == nil {
+			total += info.Size()
+		}
+	}
+	return StorageReport{DBBytes: total}
 }

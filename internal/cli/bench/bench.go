@@ -22,6 +22,7 @@ func NewBenchCommand() *cli.Command {
 		Hidden: true,
 		Commands: []*cli.Command{
 			newRunCommand(),
+			newDiffCommand(),
 		},
 	}
 }
@@ -85,4 +86,39 @@ func runAction(ctx context.Context, cmd *cli.Command) error {
 
 	// Emit the full report before failing, so violations are always visible.
 	return checkErr
+}
+
+func newDiffCommand() *cli.Command {
+	return &cli.Command{
+		Name:      "diff",
+		Usage:     "Compare two benchmark reports run on identical dataset bytes",
+		ArgsUsage: "<reportA.json> <reportB.json>",
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			args := cmd.Args()
+			if args.Len() != 2 {
+				return fmt.Errorf("two report paths required")
+			}
+
+			var reports [2]benchmark.Report
+			for i, path := range [2]string{args.Get(0), args.Get(1)} {
+				raw, err := os.ReadFile(path)
+				if err != nil {
+					return fmt.Errorf("read report %s: %w", path, err)
+				}
+				dec := json.NewDecoder(bytes.NewReader(raw))
+				if err := dec.Decode(&reports[i]); err != nil {
+					return fmt.Errorf("parse report %s: %w", path, err)
+				}
+			}
+
+			diff, err := benchmark.Diff(reports[0], reports[1])
+			if err != nil {
+				return err
+			}
+
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			return enc.Encode(diff)
+		},
+	}
 }

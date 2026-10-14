@@ -129,10 +129,30 @@ fails, and the command exits nonzero.
 ## Report
 
 JSON with dataset identity (id, sha256), effective configuration
-(top_k, candidate_policy, ranking name), informational latency (mean/p95/max;
-p95 nearest-rank), per-unit aggregates, and per-query ranked lists (id,
-entry_id, diagnostic score, judged grade) with metrics. Two runs on the same
-machine produce identical ranked lists and metrics; only latency varies.
+(top_k, candidate_policy, ranking name), informational latency (mean/p95/max,
+p95 nearest-rank, queries/sec), coverage counters, process memory deltas,
+per-unit aggregates, and per-query ranked lists (id, entry_id, diagnostic
+score, judged grade, candidate count) with metrics. Two runs on the same
+machine produce identical ranked lists, metrics, coverage, and storage
+totals; latency and memory values vary.
+
+- `coverage`: dataset entry/document totals, `documents_recovered` (distinct
+  documents retrieved at least once in any article-unit top-k; entry-unit
+  hits only reveal entries and are not counted), `no_hit_queries`,
+  `zero_recall_queries`, `controls`.
+- `mem` (informational, machine-dependent): `seed_alloc_bytes` and
+  `retrieval_alloc_bytes` (runtime TotalAlloc deltas via ReadMemStats),
+  `heap_alloc_peak_bytes` (largest HeapAlloc observed between queries),
+  `gcs` (GC cycles during the run).
+- `storage`: `db_bytes` — kb.db plus WAL/SHM sidecars at report time.
+
+## Report diff
+
+`kb bench diff a.json b.json` (or `benchmark.Diff(a, b)`) compares two
+reports run on identical dataset bytes and configuration; any binding
+mismatch is an error. Output: per-unit aggregate deltas (precision, recall,
+MRR, nDCG, hit1_rate) with before/after/delta, per-query metric diffs, and
+the list of queries whose top-k ranking reordered.
 
 ## Limitations / known engine issues (benchmark targets, not fixed here)
 
