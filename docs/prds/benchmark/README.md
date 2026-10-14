@@ -88,17 +88,40 @@ dataset bytes, cutoff, and candidate policy:
   "top_k": 3,
   "candidate_policy": "unbounded",
   "minimum": {
-    "article": {"precision": 0.4, "recall": 1.0, "mrr": 1.0, "ndcg": 1.0},
-    "entry": {"precision": 0.45, "recall": 1.0, "mrr": 1.0, "ndcg": 1.0}
+    "article": {"precision": 0.4, "recall": 1.0, "mrr": 1.0, "ndcg": 1.0, "hit1": 1.0},
+    "entry": {"precision": 0.45, "recall": 1.0, "mrr": 1.0, "ndcg": 1.0, "hit1": 1.0}
+  },
+  "maximum": {
+    "db_bytes": 550000
   },
   "per_query_minimum": {
     "q-timeout": {"recall": 1.0},
     "q-sqlite": {"recall": 1.0},
     "q-lock": {"recall": 1.0, "ndcg": 0.85},
     "q-entry-database": {"recall": 1.0}
+  },
+  "reference": {
+    "latency_mean_ms": 0.254,
+    "latency_p95_ms": 0.277,
+    "qps": 3938.3,
+    "seed_alloc_bytes": 10840,
+    "retrieval_alloc_bytes": 103808,
+    "heap_alloc_peak_bytes": 684440,
+    "gcs": 0
   }
 }
 ```
+
+Enforcement split, chosen so the gate never flakes on machine speed:
+
+- **Enforced floors**: precision, recall, MRR, nDCG per unit (all four
+  required), optional `hit1` rate, optional per-query floors, and
+  `maximum.db_bytes` — the benchmark KB's on-disk footprint, which is
+  deterministic for identical seed bytes and catches index-size regressions.
+- **Recorded reference (never enforced)**: latency mean/p95, QPS, and the
+  memory deltas under `reference`. Timing and memory vary across machines;
+  violating a timing gate would fail unrelated machines, so these are
+  documented measured values for human comparison only.
 
 - Report binding mismatches (different dataset bytes, `top_k`, or candidate
   policy) are hard errors, never violations: re-measure and re-bind

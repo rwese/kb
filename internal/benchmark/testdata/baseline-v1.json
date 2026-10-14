@@ -11,20 +11,34 @@
           "precision": 0.4,
           "recall": 1.0,
           "mrr": 1.0,
-          "ndcg": 1.0
+          "ndcg": 1.0,
+          "hit1": 1.0
         },
         "entry": {
           "precision": 0.45,
           "recall": 1.0,
           "mrr": 1.0,
-          "ndcg": 1.0
+          "ndcg": 1.0,
+          "hit1": 1.0
         }
+      },
+      "maximum": {
+        "db_bytes": 550000
       },
       "per_query_minimum": {
         "q-timeout": { "recall": 1.0 },
         "q-sqlite": { "recall": 1.0 },
         "q-lock": { "recall": 1.0, "ndcg": 0.85 },
         "q-entry-database": { "recall": 1.0 }
+      },
+      "reference": {
+        "latency_mean_ms": 0.254,
+        "latency_p95_ms": 0.277,
+        "qps": 3938.3,
+        "seed_alloc_bytes": 10840,
+        "retrieval_alloc_bytes": 103808,
+        "heap_alloc_peak_bytes": 684440,
+        "gcs": 0
       }
     }
   ]

@@ -17,20 +17,44 @@ const (
 	baselineEpsilon = 1e-12
 )
 
-// MetricFloor is one optional metric floor. Pointer fields distinguish an
-// absent floor from a zero floor.
+// MetricFloor is a set of optional metric floors. Pointer fields distinguish
+// an absent floor from a zero floor. Hit1 is optional even at aggregate
+// level; the other four are required there.
 type MetricFloor struct {
 	Precision *float64 `json:"precision,omitempty"`
 	Recall    *float64 `json:"recall,omitempty"`
 	MRR       *float64 `json:"mrr,omitempty"`
 	NDCG      *float64 `json:"ndcg,omitempty"`
+	Hit1      *float64 `json:"hit1,omitempty"`
 }
 
 // BaselineMinimum requires all four aggregate floors, per unit, matching the
-// report aggregates.
+// report aggregates. Hit1 is an additional optional floor there.
 type BaselineMinimum struct {
 	Article MetricFloor `json:"article"`
 	Entry   MetricFloor `json:"entry"`
+}
+
+// Maximum holds optional resource ceilings, enforced like floors but from
+// above. Only values that are stable across machines fit here (e.g. the
+// deterministic benchmark database size); timing or memory must never be
+// gated.
+type Maximum struct {
+	DBBytes *int64 `json:"db_bytes,omitempty"`
+}
+
+// Reference records one measured run's machine-dependent values (latency,
+// throughput, memory) as documentation. It is never enforced: timing and
+// memory vary across machines and runs, and the baseline must not flake.
+type Reference struct {
+	LatencyMeanMS *float64 `json:"latency_mean_ms,omitempty"`
+	LatencyP95MS  *float64 `json:"latency_p95_ms,omitempty"`
+	QPS           *float64 `json:"qps,omitempty"`
+
+	SeedAllocBytes      *int64 `json:"seed_alloc_bytes,omitempty"`
+	RetrievalAllocBytes *int64 `json:"retrieval_alloc_bytes,omitempty"`
+	HeapAllocPeakBytes  *int64 `json:"heap_alloc_peak_bytes,omitempty"`
+	GCs                 *int64 `json:"gcs,omitempty"`
 }
 
 // BaselineCase binds floors to one exact dataset: its SHA-256, the run
@@ -43,6 +67,8 @@ type BaselineCase struct {
 	CandidatePolicy string                 `json:"candidate_policy"`
 	Minimum         BaselineMinimum        `json:"minimum"`
 	PerQuery        map[string]MetricFloor `json:"per_query_minimum,omitempty"`
+	Maximum         Maximum                `json:"maximum,omitempty"`
+	Reference       *Reference             `json:"reference,omitempty"`
 }
 
 // Baseline is a committed set of cases loaded from JSON.
@@ -101,13 +127,19 @@ func LoadBaseline(r io.Reader) (Baseline, error) {
 					return Baseline{}, fmt.Errorf("case %s: floors must be finite and within [0,1]", c.Dataset)
 				}
 			}
+			if f.Hit1 != nil && !validFloor(*f.Hit1) {
+				return Baseline{}, fmt.Errorf("case %s: floors must be finite and within [0,1]", c.Dataset)
+			}
 		}
 		for qid, f := range c.PerQuery {
-			for _, v := range []*float64{f.Precision, f.Recall, f.MRR, f.NDCG} {
+			for _, v := range []*float64{f.Precision, f.Recall, f.MRR, f.NDCG, f.Hit1} {
 				if v != nil && !validFloor(*v) {
 					return Baseline{}, fmt.Errorf("case %s: per-query floor for %s must be finite and within [0,1]", c.Dataset, qid)
 				}
 			}
+		}
+		if v := c.Maximum.DBBytes; v != nil && *v <= 0 {
+			return Baseline{}, fmt.Errorf("case %s: maximum db_bytes must be positive", c.Dataset)
 		}
 	}
 	return b, nil
@@ -151,11 +183,12 @@ func (c BaselineCase) Check(report Report) error {
 		if !ok {
 			return fmt.Errorf("report has no aggregate for unit %s", unit)
 		}
-		violations = append(violations, checkFloor(fmt.Sprintf("aggregate %s", unit), nameMap(floors), Metrics{
-			Precision: agg.Precision,
-			Recall:    agg.Recall,
-			MRR:       agg.MRR,
-			NDCG:      agg.NDCG,
+		violations = append(violations, checkFloor(fmt.Sprintf("aggregate %s", unit), nameMap(floors), map[string]float64{
+			"precision": agg.Precision,
+			"recall":    agg.Recall,
+			"mrr":       agg.MRR,
+			"ndcg":      agg.NDCG,
+			"hit1":      agg.Hit1Rate,
 		})...)
 	}
 
@@ -177,7 +210,16 @@ func (c BaselineCase) Check(report Report) error {
 		if qr.Metrics == nil {
 			return fmt.Errorf("per-query floor for %s has no metrics", q)
 		}
-		violations = append(violations, checkFloor(fmt.Sprintf("query %s", q), nameMap(floors), *qr.Metrics)...)
+		violations = append(violations, checkFloor(fmt.Sprintf("query %s", q), nameMap(floors), map[string]float64{
+			"precision": qr.Metrics.Precision,
+			"recall":    qr.Metrics.Recall,
+			"mrr":       qr.Metrics.MRR,
+			"ndcg":      qr.Metrics.NDCG,
+		})...)
+	}
+
+	if c.Maximum.DBBytes != nil && report.Storage.DBBytes > *c.Maximum.DBBytes {
+		violations = append(violations, fmt.Sprintf("storage: db_bytes %d > cap %d", report.Storage.DBBytes, *c.Maximum.DBBytes))
 	}
 
 	if len(violations) > 0 {
@@ -187,23 +229,21 @@ func (c BaselineCase) Check(report Report) error {
 	return nil
 }
 
-// checkFloor compares each present floor against metrics and returns
+// checkFloor compares each present floor against actual values and returns
 // violation strings.
-func checkFloor(scope string, floors map[string]float64, m Metrics) []string {
-	actual := map[string]float64{
-		"precision": m.Precision,
-		"recall":    m.Recall,
-		"mrr":       m.MRR,
-		"ndcg":      m.NDCG,
-	}
+func checkFloor(scope string, floors, actual map[string]float64) []string {
 	var violations []string
-	for _, name := range []string{"precision", "recall", "mrr", "ndcg"} {
+	for _, name := range []string{"precision", "recall", "mrr", "ndcg", "hit1"} {
 		floor, ok := floors[name]
 		if !ok {
 			continue
 		}
-		if actual[name] < floor-baselineEpsilon {
-			violations = append(violations, fmt.Sprintf("%s: %s %.6f < floor %.6f", scope, name, actual[name], floor))
+		value, ok := actual[name]
+		if !ok {
+			return []string{fmt.Sprintf("%s: %s not measurable here", scope, name)}
+		}
+		if value < floor-baselineEpsilon {
+			violations = append(violations, fmt.Sprintf("%s: %s %.6f < floor %.6f", scope, name, value, floor))
 		}
 	}
 	return violations
@@ -232,6 +272,9 @@ func nameMap(f MetricFloor) map[string]float64 {
 	}
 	if f.NDCG != nil {
 		out["ndcg"] = *f.NDCG
+	}
+	if f.Hit1 != nil {
+		out["hit1"] = *f.Hit1
 	}
 	return out
 }

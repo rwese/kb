@@ -5,6 +5,8 @@ import (
 	"testing"
 )
 
+func ptr(v float64) *float64 { return &v }
+
 func validBaselineJSON() string {
 	return `{
 		"version": 1,
@@ -226,6 +228,72 @@ func TestCheckBaselinePerQueryReferences(t *testing.T) {
 	control := []QueryReport{{ID: "q1", Unit: UnitArticle, Control: true}}
 	if err := c.Check(fixtureReport(hashBytes([]byte("x")), 3, agg, control)); err == nil || !strings.Contains(err.Error(), "control query q1") {
 		t.Fatalf("control per-query floor must error: %v", err)
+	}
+}
+
+func TestCheckBaselineHit1AndStorage(t *testing.T) {
+	hit1Low := mustLoadBaseline(t, strings.ReplaceAll(validBaselineJSON(),
+		`"mrr": 1.0, "ndcg": 1.0}`, `"mrr": 1.0, "ndcg": 1.0, "hit1": 0.3}`)).Cases[0]
+	agg := map[string]UnitAggregate{
+		UnitArticle: {Queries: 1, Precision: 0.5, Recall: 1, MRR: 1, NDCG: 1, Hit1Rate: 1},
+		UnitEntry:   {Queries: 1, Precision: 0.5, Recall: 1, MRR: 1, NDCG: 1, Hit1Rate: 1},
+	}
+	queries := []QueryReport{{ID: "q1", Unit: UnitArticle, Metrics: &Metrics{Precision: 0.5, Recall: 1, MRR: 1, NDCG: 1}}}
+	if err := hit1Low.Check(fixtureReport(hashBytes([]byte("x")), 3, agg, queries)); err != nil {
+		t.Fatalf("hit1 floor at 0.3 must pass at rate 1: %v", err)
+	}
+
+	broken := hit1Low
+	broken.Minimum.Article.Hit1 = ptr(1.0)
+	aggDrill := map[string]UnitAggregate{
+		UnitArticle: {Queries: 1, Precision: 0.5, Recall: 1, MRR: 1, NDCG: 1, Hit1Rate: 0.5},
+		UnitEntry:   agg[UnitEntry],
+	}
+	if err := broken.Check(fixtureReport(hashBytes([]byte("x")), 3, aggDrill, queries)); err == nil || !strings.Contains(err.Error(), "hit1") {
+		t.Fatalf("hit1 floor must be enforceable: %v", err)
+	}
+
+	// Storage cap: enforced, reported like a floor violation.
+	capped := mustLoadBaseline(t, withMaximum(t, `{"db_bytes": 100}`)).Cases[0]
+	overCap := fixtureReport(hashBytes([]byte("x")), 3, agg, queries)
+	overCap.Storage = StorageReport{DBBytes: 5000}
+	err := capped.Check(overCap)
+	if err == nil || !strings.Contains(err.Error(), "db_bytes") || !strings.Contains(err.Error(), "> cap") {
+		t.Fatalf("storage cap must be enforced: %v", err)
+	}
+
+	// Generous cap passes.
+	cappedOK := mustLoadBaseline(t, withMaximum(t, `{"db_bytes": 1000000}`)).Cases[0]
+	if err := cappedOK.Check(overCap); err != nil {
+		t.Fatalf("adequate storage cap must pass: %v", err)
+	}
+}
+
+func withMaximum(t *testing.T, maximum string) string {
+	t.Helper()
+	base := validBaselineJSON()
+	return strings.Replace(base,
+		`"per_query_minimum": {`,
+		`"maximum": `+maximum+`,
+		"per_query_minimum": {`,
+		1)
+}
+
+func TestLoadBaselineReferenceIsOptional(t *testing.T) {
+	// Reference data must parse and never affect enforcement.
+	ref := `{"latency_mean_ms": 0.254, "qps": 3938.3, "gcs": 0}`
+	b := mustLoadBaseline(t, strings.Replace(validBaselineJSON(),
+		`"per_query_minimum": {`, `"reference": `+ref+`,
+		"per_query_minimum": {`, 1))
+	if b.Cases[0].Reference == nil || *b.Cases[0].Reference.QPS != 3938.3 {
+		t.Fatalf("reference not loaded: %+v", b.Cases[0].Reference)
+	}
+}
+
+func TestLoadBaselineInvalidMaximum(t *testing.T) {
+	_, err := LoadBaseline(strings.NewReader(withMaximum(t, `{"db_bytes": -5}`)))
+	if err == nil || !strings.Contains(err.Error(), "db_bytes must be positive") {
+		t.Fatalf("negative db cap must error: %v", err)
 	}
 }
 
