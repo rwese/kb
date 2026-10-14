@@ -100,6 +100,23 @@ kb entry attachment delete --force <entry-id> <attachment-id>
 
 `attachment add` accepts exactly one regular file; directories, symlinks, and special files are rejected, so add attachments for single files only. Attachment IDs are six characters and entry-scoped - always pass the entry ID first.
 
+## Benchmark search quality
+
+`kb bench run` (hidden) scores retrieval on a JSONL dataset: entries,
+documents, judged queries (grades 0..3), and no-match controls are imported
+into a throwaway KB and ranked by the live engine; reports carry
+precision/recall/MRR/nDCG per unit (article, entry) plus per-query rankings.
+
+```bash
+kb bench run --dataset internal/benchmark/testdata/lexical-v1.jsonl
+kb bench run --dataset <experiment.jsonl> --baseline <floor.json>
+```
+
+With `--baseline`, the report is still printed when floors fail, and the exit
+code is nonzero. It never touches a real knowledgebase; commit new datasets
+as JSONL and follow docs/prds/benchmark/README.md. Use it to compare ranking
+changes on the same dataset bytes.
+
 ## Export and delete
 
 ```bash

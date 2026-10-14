@@ -53,8 +53,10 @@ CGO_CFLAGS="-DSQLITE_ENABLE_FTS5" go test ./...
 | `internal/cli/` | urfave/cli/v3 root assembly (`cli.go`) + CLI-level integration tests |
 | `internal/cli/{entry,article,asset,attachment,search,export,system}/` | subcommand definitions, one package per domain |
 | `internal/cli/shared/` | cross-cutting CLI helpers (db access, view types, printers) |
+| `internal/cli/bench/` | hidden `kb bench run` command (JSONL benchmark reports) |
 | `internal/db/` | SQLite storage: entries, articles, assets, attachments, FTS index, vectors |
 | `internal/search/` | BM25, hybrid ranking, and per-set score normalization (`ranker.go`) |
+| `internal/benchmark/` | JSONL retrieval benchmarks: dataset parser, metrics, isolated runner, baseline gate (`docs/prds/benchmark/`) |
 | `internal/embed/` | embedding providers: `ollama.go` (server) |
 | `internal/assets/` | asset + attachment import/staging/cleanup (KB-owned copies) |
 | `internal/id/` | id generation (6 hex chars) |
@@ -138,6 +140,28 @@ This section is the authoritative description of how retrieval works, documented
 - `ReciprocalRankFusion` and `NormalizeScore` in `ranker.go` are implemented but unwired; `--context`/`--context-file` flags are registered but unused in the search action.
 
 `--prompt` text is used as the query (falls back to the positional arg).
+
+### Benchmarking
+
+The retrieval benchmark suite lives in `internal/benchmark/` with its spec in
+`docs/prds/benchmark/README.md`. Datasets are JSONL (entries, documents,
+judged queries, no-match controls); runs seed an isolated temp KB and are
+scored with precision@k / recall@k / MRR@k / nDCG@k per unit (article, entry).
+
+- `TestRetrievalBaseline` (internal/benchmark/gate_test.go) enforces the
+  committed baseline (`testdata/baseline-v1.json`, bound to the exact dataset
+  SHA-256) on every `go test` run — the gate must never be bypassed or
+  auto-relaxed.
+- Manual experiments:
+
+  ```bash
+  bin/kb bench run --dataset internal/benchmark/testdata/lexical-v1.jsonl
+  bin/kb bench run --dataset <experiment.jsonl> --baseline <floor.json>
+  ```
+
+  Violating floors print the full report first and exit nonzero. Floors are
+  measured values; edit them only with an explicit reviewed change after
+  re-measuring.
 
 ## Writing tests
 

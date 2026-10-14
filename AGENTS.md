@@ -41,6 +41,8 @@ Done when gofmt reports no changes, golangci-lint passes, and `go test ./...` is
 | `internal/cli/` | CLI root assembly (`cli.go`) + integration tests |
 | `internal/cli/{entry,article,asset,attachment,search,export,system}/` | subcommand definitions, one package per domain |
 | `internal/cli/shared/` | cross-cutting CLI helpers (db access, view types, printers) |
+| `internal/cli/bench/` | hidden `kb bench run` command (JSONL benchmark reports) |
+| `internal/benchmark/` | JSONL retrieval benchmarks: dataset parser, metrics, isolated runner, baseline gate (`docs/prds/benchmark/`) |
 | `internal/db/` | SQLite: entries, articles, assets, FTS index, vectors |
 | `internal/search/` | BM25 + hybrid ranking |
 | `internal/embed/` | embedding provider: ollama |

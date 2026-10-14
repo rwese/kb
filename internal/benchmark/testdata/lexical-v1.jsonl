@@ -1,0 +1,27 @@
+{"type":"dataset","version":1,"id":"lexical-v1"}
+{"type":"entry","id":"a1b2c3","title":"SQLite storage","tags":"database"}
+{"type":"entry","id":"d4e5f6","title":"PostgreSQL operations","tags":"database"}
+{"type":"entry","id":"9a8b7c","title":"Web reliability","tags":"http"}
+{"type":"entry","id":"112233","title":"Frontend layout","tags":"css"}
+{"type":"entry","id":"445566","title":"Garden notes","tags":"home"}
+{"type":"entry","id":"778899","title":"Travel notes","tags":"photo"}
+{"type":"document","id":"a1b2c3-000001","entry_id":"a1b2c3","title":"SQLite busy timeout","content":"SQLite lock contention uses busy_timeout."}
+{"type":"document","id":"a1b2c3-000002","entry_id":"a1b2c3","title":"SQLite snapshots","content":"SQLite backup snapshot restore procedure."}
+{"type":"document","id":"a1b2c3-000003","entry_id":"a1b2c3","title":"SQLite mutex","content":"SQLite lock mutex concurrency reference."}
+{"type":"document","id":"d4e5f6-000001","entry_id":"d4e5f6","title":"PostgreSQL backup","content":"PostgreSQL backup pg_dump restore procedure."}
+{"type":"document","id":"9a8b7c-000001","entry_id":"9a8b7c","title":"HTTP retries","content":"HTTP retry backoff handles gateway failure."}
+{"type":"document","id":"112233-000001","entry_id":"112233","title":"CSS layout","content":"CSS grid layout alignment reference."}
+{"type":"document","id":"445566-000001","entry_id":"445566","title":"Garden locks","content":"Garden gate lock maintenance instructions."}
+{"type":"document","id":"778899-000001","entry_id":"778899","title":"Travel snapshots","content":"Travel snapshot photograph archive."}
+{"type":"query","id":"q-timeout","text":"busy_timeout","unit":"article","relevant":[{"id":"a1b2c3-000001","grade":3}]}
+{"type":"query","id":"q-title","text":"\"SQLite busy\"","unit":"article","relevant":[{"id":"a1b2c3-000001","grade":3}]}
+{"type":"query","id":"q-restore","text":"sqlite restore","unit":"article","relevant":[{"id":"a1b2c3-000002","grade":3}]}
+{"type":"query","id":"q-paraphrase","text":"sqlite snapshot","unit":"article","relevant":[{"id":"a1b2c3-000002","grade":3}]}
+{"type":"query","id":"q-pgdump","text":"pg_dump","unit":"article","relevant":[{"id":"d4e5f6-000001","grade":3}]}
+{"type":"query","id":"q-retry","text":"retrying","unit":"article","relevant":[{"id":"9a8b7c-000001","grade":3}]}
+{"type":"query","id":"q-sqlite","text":"sqlite","unit":"article","relevant":[{"id":"a1b2c3-000001","grade":1},{"id":"a1b2c3-000002","grade":1},{"id":"a1b2c3-000003","grade":1}]}
+{"type":"query","id":"q-lock","text":"sqlite lock","unit":"article","relevant":[{"id":"a1b2c3-000001","grade":3},{"id":"a1b2c3-000003","grade":1}]}
+{"type":"query","id":"q-entry-backup","text":"sqlite backup","unit":"entry","relevant":[{"id":"a1b2c3","grade":3}]}
+{"type":"query","id":"q-entry-database","text":"backup","unit":"entry","relevant":[{"id":"a1b2c3","grade":2},{"id":"d4e5f6","grade":1}]}
+{"type":"query","id":"q-control-plain","text":"kubernetes cronjob","unit":"article"}
+{"type":"query","id":"q-control-stem","text":"kubernetes rollout","unit":"entry"}

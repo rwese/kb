@@ -6,6 +6,7 @@ import (
 	"github.com/rwese/kb/internal/cli/article"
 	"github.com/rwese/kb/internal/cli/asset"
 	"github.com/rwese/kb/internal/cli/attachment"
+	benchcmd "github.com/rwese/kb/internal/cli/bench"
 	"github.com/rwese/kb/internal/cli/entry"
 	"github.com/rwese/kb/internal/cli/export"
 	"github.com/rwese/kb/internal/cli/search"
@@ -27,6 +28,7 @@ func (c *Commands) Run(ctx context.Context, args []string) error {
 			system.NewInitCommand(),
 			system.NewConfigCommand(),
 			search.NewSearchCommand(),
+			benchcmd.NewBenchCommand(),
 			system.NewStatsCommand(),
 			export.NewExportCommand(),
 			deleteCommand(),
