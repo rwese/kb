@@ -797,6 +797,8 @@ func (d *DB) searchAttachments(query string, topK int, includeDeleted bool) ([]S
 // mergeNormalizedSearchResults normalizes the score range of each candidate set
 // independently (raw BM25 values from separate FTS tables are not directly
 // comparable), then merges and sorts them into one ranked list capped at topK.
+// Every Score leaving this function is direction-correct: higher = more
+// relevant, best hit 1.0, worst 0.0.
 func mergeNormalizedSearchResults(articleResults, attachmentResults []SearchResult, topK int) []SearchResult {
 	normalizeScoreSet(articleResults)
 	normalizeScoreSet(attachmentResults)
@@ -814,7 +816,10 @@ func mergeNormalizedSearchResults(articleResults, attachmentResults []SearchResu
 	return merged
 }
 
-// normalizeScoreSet maps a set's scores to the 0-1 range in place. A set with
+// normalizeScoreSet maps a set's scores to the 0-1 range in place. SQLite
+// FTS5's bm25() is negated: the best hit carries the most negative raw score
+// (the minimum), so the fall-on-best mapping is (max - raw) / (max - min).
+// Guarantees direction-correct output: best hit 1.0, worst 0.0. A set with
 // a single hit (or all-equal scores) maps to 1.0 so lone matches compete fairly
 // with hits from the other FTS index.
 func normalizeScoreSet(results []SearchResult) {
@@ -841,7 +846,7 @@ func normalizeScoreSet(results []SearchResult) {
 		return
 	}
 	for i := range results {
-		results[i].Score = (results[i].Score - min) / (max - min)
+		results[i].Score = (max - results[i].Score) / (max - min)
 	}
 }
 
