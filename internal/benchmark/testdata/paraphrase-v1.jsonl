@@ -1,0 +1,28 @@
+{"type":"dataset","version":1,"id":"paraphrase-v1"}
+{"type":"entry","id":"aa11bb","title":"Networking","tags":"network"}
+{"type":"entry","id":"cc22dd","title":"Databases","tags":"database"}
+{"type":"entry","id":"ee44ff","title":"Containers","tags":"containers"}
+{"type":"entry","id":"ab12cd","title":"Security","tags":"security"}
+{"type":"entry","id":"ef34ab","title":"Observability","tags":"observability"}
+{"type":"document","id":"aa11bb-000001","entry_id":"aa11bb","title":"Slow wireless throughput","content":"Wireless clients negotiating a weak signal drop to lower modulation rates, so throughput caps far below the advertised maximum. Survey channel utilization before moving access points."}
+{"type":"document","id":"aa11bb-000002","entry_id":"aa11bb","title":"DNS resolution timeouts","content":"Applications hanging on name lookups see intermittent dns resolution failures that hang application queries. Point resolvers at two recursive servers, cap the response wait, and expect outages when either fails."}
+{"type":"document","id":"cc22dd-000001","entry_id":"cc22dd","title":"Slow analytic queries","content":"Slow analytic queries read every column. Zone maps let the planner skip segments, and rare scans stay cheap while hot ones crawl for concurrent writers."}
+{"type":"document","id":"cc22dd-000002","entry_id":"cc22dd","title":"Lock contention on hot rows","content":"Many writers touching the same rows serialize on row locks. Batch the writes, shorten transactions, and move the hot counter into an append-only series of events."}
+{"type":"document","id":"ee44ff-000001","entry_id":"ee44ff","title":"Image pull latency","content":"Cold container starts wait on large images crossing the network. Pre-pull images on the node, run a local registry mirror, and prefer slim bases; big pulls also cap cluster throughput."}
+{"type":"document","id":"ee44ff-000002","entry_id":"ee44ff","title":"Crash looping pods","content":"A pod restarting repeatedly usually fails its readiness check because a dependency is unreachable. Read the container log tail, verify the endpoint, and add a startup grace period; keep images current so restarts are not config drift."}
+{"type":"document","id":"ab12cd-000001","entry_id":"ab12cd","title":"Credential leakage in repos","content":"Committed tokens require rotation, not just deletion, because history keeps every revision. Scan repositories for leaks, revoke the exposed credentials, and store replacements in a vault."}
+{"type":"document","id":"ab12cd-000002","entry_id":"ab12cd","title":"Brute force login attempts","content":"Password guessing against the login endpoint shows up as bursts of failed attempts. Rate limit them, require second factors for privileged accounts, and treat repeated failures across usernames as credential leaks."}
+{"type":"document","id":"ef34ab-000001","entry_id":"ef34ab","title":"Missing alert coverage","content":"Silent outages happened because no monitor watched the failure mode. Define service level objectives, record error budgets, and page only on symptoms users feel; resolution starts with paging."}
+{"type":"document","id":"ef34ab-000002","entry_id":"ef34ab","title":"High cardinality metrics cost","content":"Labeling every request with a user identifier explodes the series count and the storage bill. Bound label values, aggregate at the edge, and drop series nobody reads."}
+{"type":"query","id":"q-wifi-throughput","text":"throughput","unit":"article","relevant":[{"id":"aa11bb-000001","grade":3}]}
+{"type":"query","id":"q-dns-resolution","text":"resolution","unit":"article","relevant":[{"id":"aa11bb-000002","grade":3}]}
+{"type":"query","id":"q-slow-queries","text":"queries","unit":"article","relevant":[{"id":"cc22dd-000001","grade":3}]}
+{"type":"query","id":"q-hot-writers","text":"writers","unit":"article","relevant":[{"id":"cc22dd-000002","grade":3}]}
+{"type":"query","id":"q-image-pull","text":"images","unit":"article","relevant":[{"id":"ee44ff-000001","grade":3}]}
+{"type":"query","id":"q-crashloop","text":"restarting","unit":"article","relevant":[{"id":"ee44ff-000002","grade":3}]}
+{"type":"query","id":"q-leaked-keys","text":"leaks","unit":"article","relevant":[{"id":"ab12cd-000001","grade":3}]}
+{"type":"query","id":"q-password-guessing","text":"attempts","unit":"article","relevant":[{"id":"ab12cd-000002","grade":3}]}
+{"type":"query","id":"q-blind-outages","text":"outages","unit":"article","relevant":[{"id":"ef34ab-000001","grade":3}]}
+{"type":"query","id":"q-metric-explosion","text":"series","unit":"article","relevant":[{"id":"ef34ab-000002","grade":3}]}
+{"type":"query","id":"q-entry-outages","text":"outages","unit":"entry","relevant":[{"id":"ef34ab","grade":3}]}
+{"type":"query","id":"q-controls","text":"quarterly audit filing deadlines for taxes","unit":"article"}
