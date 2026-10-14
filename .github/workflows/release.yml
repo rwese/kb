@@ -41,14 +41,13 @@ jobs:
 
       - name: Build binary
         env:
-          CGO_ENABLED: "1"   # cgo defaults to 0 when GOARCH differs from host
-          CGO_CFLAGS: -DSQLITE_ENABLE_FTS5
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
+          VERSION: ${{ github.ref_name }}
+        # macOS runners provide native toolchains for both arches; CGO must
+        # stay enabled (sqlite lives in the cgo layer).
         run: |
-          go build -tags sqlite_fts5 \
-            -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" \
-            -o dist/kb-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/kb
+          bash scripts/build.sh \
+            --os ${{ matrix.goos }} --arch ${{ matrix.goarch }} \
+            --variant standard --version "$VERSION"
 
       - name: Smoke test (native build)
         if: matrix.goos == 'linux' || matrix.goarch == 'arm64'
